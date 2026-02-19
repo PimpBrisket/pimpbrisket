@@ -296,6 +296,47 @@ async function adjustMoney(db, discordUserId, amount) {
   return getPlayerByDiscordId(db, discordUserId);
 }
 
+async function lockActionCooldown(db, discordUserId, action) {
+  const actionConfig = getActionConfig(action);
+  if (!actionConfig) throw new Error("Unsupported action");
+
+  await run(
+    db,
+    `INSERT OR IGNORE INTO players (discordUserId, money)
+     VALUES (?, 0)`,
+    [discordUserId]
+  );
+
+  const playerBefore = await getPlayerByDiscordId(db, discordUserId);
+  const now = Date.now();
+  const cooldownUntil = Number(playerBefore[actionConfig.cooldownColumn]) || 0;
+  if (cooldownUntil > now) {
+    return {
+      ok: false,
+      cooldownUntil,
+      cooldownRemainingMs: cooldownUntil - now,
+      player: playerBefore
+    };
+  }
+
+  const nextCooldownUntil = now + ACTION_COOLDOWN_MS;
+  await run(
+    db,
+    `UPDATE players
+     SET ${actionConfig.cooldownColumn} = ?
+     WHERE discordUserId = ?`,
+    [nextCooldownUntil, discordUserId]
+  );
+
+  const playerAfter = await getPlayerByDiscordId(db, discordUserId);
+  return {
+    ok: true,
+    cooldownUntil: nextCooldownUntil,
+    cooldownRemainingMs: ACTION_COOLDOWN_MS,
+    player: playerAfter
+  };
+}
+
 function getActionConfig(action) {
   return ACTIONS[action] || null;
 }
@@ -329,9 +370,14 @@ function getActionMetadata() {
   };
 }
 
-async function performAction(db, discordUserId, action) {
+async function performAction(db, discordUserId, action, options = {}) {
   const actionConfig = getActionConfig(action);
   if (!actionConfig) throw new Error("Unsupported action");
+  const {
+    ignoreCooldown = false,
+    preserveExistingCooldown = false,
+    cashMultiplier = 1
+  } = options;
 
   await run(
     db,
@@ -343,7 +389,7 @@ async function performAction(db, discordUserId, action) {
   const playerBefore = await getPlayerByDiscordId(db, discordUserId);
   const now = Date.now();
   const cooldownUntil = Number(playerBefore[actionConfig.cooldownColumn]) || 0;
-  if (cooldownUntil > now) {
+  if (!ignoreCooldown && cooldownUntil > now) {
     return {
       ok: false,
       cooldownUntil,
@@ -353,9 +399,9 @@ async function performAction(db, discordUserId, action) {
   }
 
   const payoutTier = rollWeightedTier(actionConfig.payoutTiers);
-  const baseReward = randomInt(payoutTier.min, payoutTier.max);
+  const baseRewardRaw = randomInt(payoutTier.min, payoutTier.max);
   const bonusTier = rollWeightedTier(actionConfig.bonusTiers);
-  const bonusCoins = bonusTier.coins;
+  const bonusCoinsRaw = bonusTier.coins;
   const xpGained = randomInt(actionConfig.xpMin, actionConfig.xpMax);
 
   let nextLevel = Math.max(1, Number(playerBefore.level) || 1);
@@ -368,7 +414,8 @@ async function performAction(db, discordUserId, action) {
     if (nextXp < neededXp) break;
     nextXp -= neededXp;
     nextLevel += 1;
-    const levelReward = levelRewardCoins(nextLevel);
+    const levelRewardRaw = levelRewardCoins(nextLevel);
+    const levelReward = Math.round(levelRewardRaw * cashMultiplier);
     levelRewardTotal += levelReward;
     levelUps.push({ level: nextLevel, rewardCoins: levelReward });
   }
@@ -378,11 +425,16 @@ async function performAction(db, discordUserId, action) {
     nextXp = 0;
   }
 
+  const baseReward = Math.round(baseRewardRaw * cashMultiplier);
+  const bonusCoins = Math.round(bonusCoinsRaw * cashMultiplier);
   const totalRewardCoins = baseReward + bonusCoins + levelRewardTotal;
   const digTrophyGain = bonusTier.itemKey === "dig_trophy" ? 1 : 0;
   const fishTrophyGain = bonusTier.itemKey === "fish_trophy" ? 1 : 0;
   const huntTrophyGain = bonusTier.itemKey === "hunt_trophy" ? 1 : 0;
-  const nextCooldownUntil = now + ACTION_COOLDOWN_MS;
+  const nextCooldownUntil =
+    preserveExistingCooldown && cooldownUntil > now
+      ? cooldownUntil
+      : now + ACTION_COOLDOWN_MS;
 
   await run(
     db,
@@ -439,6 +491,7 @@ module.exports = {
   getPlayerByDiscordId,
   registerPlayer,
   adjustMoney,
+  lockActionCooldown,
   performAction,
   getActionConfig,
   getActionMetadata,

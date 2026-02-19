@@ -1,17 +1,19 @@
 # Bot Project Structure
 
-This project is split into three services:
+This project has three services:
 
-- `api/`: Express API and the only service allowed to access SQLite
-- `bot/`: Discord bot that talks to the API
-- `web/`: Landing page for player registration that talks to the API
+- `api/`: Express API (OAuth + player data)
+- `web/`: website frontend
+- `bot/`: Discord bot client
 
 ## Prerequisites
 
 - Node.js 18+
 - npm
 
-## 1) Run API
+## Local Development
+
+### 1) API
 
 ```bash
 cd api
@@ -19,30 +21,27 @@ npm install
 npm start
 ```
 
-Create `api/.env` from `api/.env.example` before starting.
+Create `api/.env` from `api/.env.example`.
 
-Default API URL: `http://localhost:3000`
+Key API env vars:
 
-Required API env vars for Discord website login:
-
+- `HOST` (default `0.0.0.0`)
+- `PORT` (default `3000`)
+- `ALLOWED_ORIGIN` (local: `http://localhost:5173`)
+- `WEB_BASE_URL` (local: `http://localhost:5173`)
+- `WEB_PLAY_PATH` (local: `/play`)
 - `DISCORD_CLIENT_ID`
 - `DISCORD_CLIENT_SECRET`
-- `DISCORD_REDIRECT_URI` (for local: `http://localhost:3000/auth/discord/callback`)
-- `WEB_BASE_URL` (for local: `http://localhost:5173`)
-- `WEB_PLAY_PATH` (default `/play`, use `/play.html` for static hosts like GitHub Pages)
+- `DISCORD_REDIRECT_URI` (local: `http://localhost:3000/auth/discord/callback`)
 
-Optional API hardening env vars:
+Optional hardening env vars:
 
-- `ENABLE_REQUEST_LOGS` (default `true`)
-- `RATE_LIMIT_WINDOW_MS` (default `10000`)
-- `RATE_LIMIT_MAX_REQUESTS_PER_IP` (default `120`)
-- `RATE_LIMIT_MAX_ACTIONS_PER_USER` (default `8`)
+- `ENABLE_REQUEST_LOGS=true`
+- `RATE_LIMIT_WINDOW_MS=10000`
+- `RATE_LIMIT_MAX_REQUESTS_PER_IP=120`
+- `RATE_LIMIT_MAX_ACTIONS_PER_USER=8`
 
-In Discord Developer Portal, add this redirect URI to your application OAuth2 settings:
-
-- `http://localhost:3000/auth/discord/callback`
-
-## 2) Run Website
+### 2) Website
 
 ```bash
 cd web
@@ -50,20 +49,15 @@ npm install
 npm start
 ```
 
-Create `web/.env` from `web/.env.example` before starting.
+Create `web/.env` from `web/.env.example`.
 
-Default website URL: `http://localhost:5173`
+Key web env vars:
 
-Set `API_BASE_URL` in `web/.env` if your API is not on port 3000.
+- `HOST` (default `0.0.0.0`)
+- `PORT` (default `5173`)
+- `API_BASE_URL` (local: `http://localhost:3000`)
 
-## Access From Other Devices (Phone/Tablets)
-
-- Both services now bind to `0.0.0.0` by default, so they can be reached on your local network.
-- Open the site from another device using your computer's LAN IP, not `localhost`.
-- Example: `http://192.168.1.50:5173`
-- If needed, allow Node.js through Windows Firewall for private networks.
-
-## 3) Run Discord Bot
+### 3) Discord Bot
 
 ```bash
 cd bot
@@ -71,7 +65,7 @@ npm install
 npm start
 ```
 
-Create `bot/.env` from `bot/.env.example` before starting.
+Create `bot/.env` from `bot/.env.example`.
 
 Required bot env vars:
 
@@ -79,28 +73,62 @@ Required bot env vars:
 - `DISCORD_CLIENT_ID`
 - `API_BASE_URL` (usually `http://localhost:3000`)
 
-Optional:
+## Production Flow (Current Working Setup)
 
-- `DISCORD_GUILD_ID` (register slash command instantly in a single guild)
+Frontend is hosted on GitHub Pages and API is hosted on Render.
 
-## Registration Flow
+- Website: `https://pimpbrisket.github.io/pimpbrisket/`
+- API: `https://pimpbrisket.onrender.com`
 
-1. User clicks `Enter With Discord` on the website.
-2. Website redirects to API `/auth/discord/login`.
-3. API completes Discord OAuth, registers the user ID in SQLite, then redirects to `/play`.
-4. User can run `Dig`, `Fish`, and `Hunt` on web with shared 5-second cooldowns.
-5. Bot `/start` also registers the user through API.
-6. Bot `/dig`, `/fish`, `/hunt` use the same API actions and same shared cooldowns.
-7. Bot `/profile` reads profile data from API and responds with an embed.
+### Render API env values
 
-## Bot Commands
+- `ALLOWED_ORIGIN=https://pimpbrisket.github.io`
+- `WEB_BASE_URL=https://pimpbrisket.github.io/pimpbrisket`
+- `WEB_PLAY_PATH=/play.html`
+- `DISCORD_REDIRECT_URI=https://pimpbrisket.onrender.com/auth/discord/callback`
+- `DISCORD_CLIENT_ID=<set>`
+- `DISCORD_CLIENT_SECRET=<set>`
 
-- `/start`
-- `/profile`
-- `/wallet`
-- `/dig`
-- `/fish`
-- `/hunt`
-"# pimpbrisket" 
-"# pimpbrisket" 
-"# pimpbrisket" 
+### Discord Developer Portal
+
+Add redirect URI:
+
+- `https://pimpbrisket.onrender.com/auth/discord/callback`
+
+## Deploy Website To GitHub Pages
+
+Run from repo root:
+
+```bash
+git add .
+git commit -m "Update site"
+git push origin main
+git branch -D gh-pages
+git subtree split --prefix=web/public -b gh-pages
+git push -u origin gh-pages --force
+```
+
+GitHub repo settings:
+
+1. `Settings`
+2. `Pages`
+3. Source: `Deploy from a branch`
+4. Branch: `gh-pages` and folder `/ (root)`
+
+## API Quick Test
+
+- `https://pimpbrisket.onrender.com/health`
+
+Expected response shape:
+
+```json
+{"ok":true,"timestamp":"...","uptimeSec":123,"db":{"ok":true}}
+```
+
+## App Flow
+
+1. User opens website and clicks Discord login.
+2. Website sends user to API `/auth/discord/login`.
+3. API completes OAuth, registers user, redirects to website `play.html`.
+4. Web and bot both call the same API actions (`dig`, `fish`, `hunt`) and share cooldowns.
+

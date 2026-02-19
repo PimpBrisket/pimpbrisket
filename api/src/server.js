@@ -12,6 +12,7 @@ const {
   getPlayerByDiscordId,
   registerPlayer,
   adjustMoney,
+  lockActionCooldown,
   performAction,
   getActionConfig,
   getActionMetadata,
@@ -142,6 +143,7 @@ const RATE_LIMIT_MAX_ACTIONS_PER_USER = parsePositiveIntEnv(
   8
 );
 const oauthStateStore = new Map();
+const actionLockTokenStore = new Map();
 
 validateStartupConfig({
   PORT,
@@ -294,6 +296,13 @@ function cleanupOAuthState() {
   const now = Date.now();
   for (const [state, expiresAt] of oauthStateStore.entries()) {
     if (expiresAt <= now) oauthStateStore.delete(state);
+  }
+}
+
+function cleanupActionLockTokens() {
+  const now = Date.now();
+  for (const [token, lockEntry] of actionLockTokenStore.entries()) {
+    if (lockEntry.expiresAt <= now) actionLockTokenStore.delete(token);
   }
 }
 
@@ -503,6 +512,109 @@ app.patch("/players/:discordUserId/money", async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 });
+
+app.post(
+  "/players/:discordUserId/actions/:action/lock",
+  actionUserRateLimiter,
+  async (req, res) => {
+    try {
+      const discordUserId = req.params.discordUserId;
+      const action = req.params.action;
+
+      if (!isValidDiscordUserId(discordUserId)) {
+        return res.status(400).json({
+          error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+        });
+      }
+      if (!getActionConfig(action)) {
+        return res.status(400).json({ error: "action must be one of: dig, fish, hunt" });
+      }
+
+      const result = await lockActionCooldown(db, discordUserId, action);
+      if (!result.ok) {
+        return res.status(429).json({
+          error: "Action is on cooldown",
+          action,
+          cooldownMs: ACTION_COOLDOWN_MS,
+          cooldownUntil: result.cooldownUntil,
+          cooldownRemainingMs: result.cooldownRemainingMs,
+          player: toPublicPlayer(result.player)
+        });
+      }
+
+      cleanupActionLockTokens();
+      const actionToken = crypto.randomBytes(18).toString("base64url");
+      actionLockTokenStore.set(actionToken, {
+        discordUserId,
+        action,
+        expiresAt: Number(result.cooldownUntil || Date.now() + ACTION_COOLDOWN_MS)
+      });
+
+      return res.json({
+        ok: true,
+        action,
+        cooldownMs: ACTION_COOLDOWN_MS,
+        cooldownUntil: result.cooldownUntil,
+        actionToken,
+        player: toPublicPlayer(result.player)
+      });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+app.post(
+  "/players/:discordUserId/actions/:action/bot",
+  actionUserRateLimiter,
+  async (req, res) => {
+    try {
+      const discordUserId = req.params.discordUserId;
+      const action = req.params.action;
+      const actionToken = req.body?.actionToken;
+
+      if (!isValidDiscordUserId(discordUserId)) {
+        return res.status(400).json({
+          error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+        });
+      }
+      if (!getActionConfig(action)) {
+        return res.status(400).json({ error: "action must be one of: dig, fish, hunt" });
+      }
+      if (typeof actionToken !== "string" || !actionToken.trim()) {
+        return res.status(400).json({ error: "actionToken is required" });
+      }
+
+      cleanupActionLockTokens();
+      const lockEntry = actionLockTokenStore.get(actionToken.trim());
+      if (!lockEntry) {
+        return res.status(409).json({ error: "Invalid or expired action token" });
+      }
+      if (lockEntry.discordUserId !== discordUserId || lockEntry.action !== action) {
+        return res.status(409).json({ error: "Action token does not match request" });
+      }
+      actionLockTokenStore.delete(actionToken.trim());
+
+      const result = await performAction(db, discordUserId, action, {
+        ignoreCooldown: true,
+        preserveExistingCooldown: true,
+        cashMultiplier: 1.05
+      });
+
+      return res.json({
+        ok: true,
+        action,
+        reward: result.reward.totalCoins,
+        rewardBreakdown: result.reward,
+        cooldownMs: ACTION_COOLDOWN_MS,
+        cooldownUntil: result.cooldownUntil,
+        player: toPublicPlayer(result.player)
+      });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+);
 
 app.post(
   "/players/:discordUserId/actions/:action",
