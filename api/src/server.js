@@ -130,6 +130,7 @@ const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || "";
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || "";
 const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || "";
 const WEB_BASE_URL = process.env.WEB_BASE_URL || "http://localhost:5173";
+const WEB_PLAY_PATH = process.env.WEB_PLAY_PATH || "/play";
 const ENABLE_REQUEST_LOGS = process.env.ENABLE_REQUEST_LOGS !== "false";
 const RATE_LIMIT_WINDOW_MS = parsePositiveIntEnv("RATE_LIMIT_WINDOW_MS", 10_000);
 const RATE_LIMIT_MAX_REQUESTS_PER_IP = parsePositiveIntEnv(
@@ -274,6 +275,14 @@ function buildUrl(baseUrl, params = {}) {
   return url.toString();
 }
 
+function buildWebUrl(pathname = "/", params = {}) {
+  const base = new URL(WEB_BASE_URL);
+  const cleanBasePath = base.pathname.replace(/\/+$/, "");
+  const cleanPath = `/${String(pathname || "/").replace(/^\/+/, "")}`;
+  base.pathname = `${cleanBasePath}${cleanPath}`;
+  return buildUrl(base.toString(), params);
+}
+
 function getOAuthConfigError() {
   if (!DISCORD_CLIENT_ID) return "Missing DISCORD_CLIENT_ID in api/.env";
   if (!DISCORD_CLIENT_SECRET) return "Missing DISCORD_CLIENT_SECRET in api/.env";
@@ -342,16 +351,14 @@ app.get("/auth/discord/callback", async (req, res) => {
   try {
     const oauthError = getOAuthConfigError();
     if (oauthError) {
-      return res.redirect(
-        buildUrl(WEB_BASE_URL, { auth: "error", reason: oauthError })
-      );
+      return res.redirect(buildWebUrl("/", { auth: "error", reason: oauthError }));
     }
 
     const code = req.query?.code;
     const state = req.query?.state;
     if (typeof code !== "string" || typeof state !== "string") {
       return res.redirect(
-        buildUrl(WEB_BASE_URL, {
+        buildWebUrl("/", {
           auth: "error",
           reason: "Missing OAuth code or state"
         })
@@ -363,7 +370,7 @@ app.get("/auth/discord/callback", async (req, res) => {
     if (!expiresAt || expiresAt <= Date.now()) {
       oauthStateStore.delete(state);
       return res.redirect(
-        buildUrl(WEB_BASE_URL, {
+        buildWebUrl("/", {
           auth: "error",
           reason: "Invalid or expired OAuth state"
         })
@@ -386,7 +393,7 @@ app.get("/auth/discord/callback", async (req, res) => {
     const tokenPayload = await tokenResponse.json();
     if (!tokenResponse.ok || !tokenPayload.access_token) {
       return res.redirect(
-        buildUrl(WEB_BASE_URL, {
+        buildWebUrl("/", {
           auth: "error",
           reason: "Discord token exchange failed"
         })
@@ -399,7 +406,7 @@ app.get("/auth/discord/callback", async (req, res) => {
     const mePayload = await meResponse.json();
     if (!meResponse.ok || !isValidDiscordUserId(mePayload?.id)) {
       return res.redirect(
-        buildUrl(WEB_BASE_URL, {
+        buildWebUrl("/", {
           auth: "error",
           reason: "Discord user fetch failed"
         })
@@ -411,7 +418,7 @@ app.get("/auth/discord/callback", async (req, res) => {
       discordAvatarHash: mePayload.avatar || null
     });
     return res.redirect(
-      buildUrl(`${WEB_BASE_URL}/play`, {
+      buildWebUrl(WEB_PLAY_PATH, {
         auth: "success",
         created: created ? "1" : "0",
         discordUserId: player.discordUserId
@@ -419,7 +426,7 @@ app.get("/auth/discord/callback", async (req, res) => {
     );
   } catch (_err) {
     return res.redirect(
-      buildUrl(WEB_BASE_URL, {
+      buildWebUrl("/", {
         auth: "error",
         reason: "Unexpected OAuth error"
       })

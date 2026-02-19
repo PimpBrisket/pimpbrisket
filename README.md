@@ -29,6 +29,7 @@ Required API env vars for Discord website login:
 - `DISCORD_CLIENT_SECRET`
 - `DISCORD_REDIRECT_URI` (for local: `http://localhost:3000/auth/discord/callback`)
 - `WEB_BASE_URL` (for local: `http://localhost:5173`)
+- `WEB_PLAY_PATH` (default `/play`, use `/play.html` for static hosts like GitHub Pages)
 
 Optional API hardening env vars:
 
