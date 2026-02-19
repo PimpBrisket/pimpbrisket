@@ -547,7 +547,7 @@ app.post(
       actionLockTokenStore.set(actionToken, {
         discordUserId,
         action,
-        expiresAt: Number(result.cooldownUntil || Date.now() + ACTION_COOLDOWN_MS)
+        expiresAt: Date.now() + 2 * 60 * 1000
       });
 
       return res.json({

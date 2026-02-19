@@ -159,10 +159,7 @@ async function fetchActionMeta() {
 }
 
 function profileEmbed(userName, profile) {
-  const xpLine =
-    Number(profile.level) >= Number(profile.maxLevel)
-      ? "MAX"
-      : `${profile.xp}/${profile.xpToNextLevel}`;
+  const lifetimeXp = Number(profile.totalXpEarned || 0);
 
   const digCount = Number(profile.trophyCollection?.dig?.count || 0);
   const fishCount = Number(profile.trophyCollection?.fish?.count || 0);
@@ -172,18 +169,14 @@ function profileEmbed(userName, profile) {
   const huntEmoji = huntCount > 0 ? TROPHY_EMOJIS.hunt : TROPHY_EMOJIS.null;
 
   return new EmbedBuilder()
-    .setTitle("Trophies")
+    .setTitle(`${userName}'s Profile`)
     .setColor(0x3ba55d)
     .addFields(
-      { name: "Player", value: userName, inline: false },
-      { name: "Collectors Greed", value: `${digEmoji} x${digCount}`, inline: true },
-      { name: "Midnight Ocean", value: `${fishEmoji} x${fishCount}`, inline: true },
-      { name: "Many Heads", value: `${huntEmoji} x${huntCount}`, inline: true },
-      { name: "Total Trophies", value: `${profile.totalTrophies || 0}`, inline: true },
       { name: "Money", value: `$${profile.money}`, inline: true },
       { name: "Level", value: `${profile.level}`, inline: true },
-      { name: "XP", value: xpLine, inline: true },
+      { name: "XP", value: `${lifetimeXp}`, inline: true },
       { name: "Total Earned", value: `$${profile.totalMoneyEarned}`, inline: true },
+      { name: "Trophies", value: `${digEmoji} ${fishEmoji} ${huntEmoji}`, inline: true },
       { name: "Commands Used", value: `${profile.totalCommandsUsed}`, inline: true },
       { name: "Joined", value: formatDate(profile.createdAt), inline: true },
       { name: "Updated", value: formatDate(profile.updatedAt), inline: true }
@@ -467,13 +460,13 @@ client.once("ready", async () => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   try {
-    if (interaction.commandName === "start") return handleStart(interaction);
-    if (interaction.commandName === "profile") return handleProfile(interaction);
-    if (interaction.commandName === "wallet") return handleWallet(interaction);
-    if (interaction.commandName === "dig") return handleActionGame(interaction, "dig");
-    if (interaction.commandName === "fish") return handleActionGame(interaction, "fish");
-    if (interaction.commandName === "hunt") return handleActionGame(interaction, "hunt");
-    if (interaction.commandName === "loottable") return handleLootTable(interaction);
+    if (interaction.commandName === "start") return await handleStart(interaction);
+    if (interaction.commandName === "profile") return await handleProfile(interaction);
+    if (interaction.commandName === "wallet") return await handleWallet(interaction);
+    if (interaction.commandName === "dig") return await handleActionGame(interaction, "dig");
+    if (interaction.commandName === "fish") return await handleActionGame(interaction, "fish");
+    if (interaction.commandName === "hunt") return await handleActionGame(interaction, "hunt");
+    if (interaction.commandName === "loottable") return await handleLootTable(interaction);
   } catch (err) {
     const message = err && err.message ? err.message : "Could not complete request.";
     const errorEmbed = new EmbedBuilder()
@@ -491,6 +484,10 @@ client.on("interactionCreate", async (interaction) => {
       console.error("Failed to send interaction error response:", responseErr);
     }
   }
+});
+
+client.on("error", (err) => {
+  console.error("Discord client error:", err);
 });
 
 client.login(DISCORD_TOKEN);
