@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Player Portal | Actions</title>
+    <link rel="stylesheet" href="/play.css" />
+  </head>
+  <body>
+    <main class="page-layout">
+      <aside class="panel chance-panel">
+        <h2 id="chance-title">Dig Chances</h2>
+        <p class="muted" id="chance-xp">XP: 0-0</p>
+
+        <h3>Coin Winnings</h3>
+        <table class="chance-table">
+          <thead>
+            <tr>
+              <th>Range</th>
+              <th>Chance</th>
+            </tr>
+          </thead>
+          <tbody id="chance-winnings"></tbody>
+        </table>
+
+        <h3>Bonus Rewards</h3>
+        <table class="chance-table">
+          <thead>
+            <tr>
+              <th>Reward</th>
+              <th>Chance</th>
+            </tr>
+          </thead>
+          <tbody id="chance-bonus"></tbody>
+        </table>
+      </aside>
+
+      <section class="main-column">
+        <header class="panel top">
+          <div class="user-corner">
+            <button id="user-menu-button" class="user-button" type="button">
+              <img
+                id="user-avatar"
+                class="user-avatar"
+                src="/assets/null_trophy.png"
+                alt="User avatar"
+              />
+            </button>
+            <div id="user-dropdown" class="user-dropdown" hidden>
+              <button id="open-profile-button" type="button">Profile</button>
+            </div>
+          </div>
+
+          <h1>Action Center</h1>
+          <p id="status">Loading profile...</p>
+
+          <div class="level-row">
+            <div class="level-left">LVL <span id="level-value">1</span></div>
+            <div class="level-center">
+              <div class="xp-line">
+                <span id="xp-text">0/0 XP</span>
+              </div>
+              <div class="xp-track">
+                <div id="xp-fill" class="xp-fill"></div>
+              </div>
+            </div>
+            <div class="level-right">
+              +<span id="level-reward">0</span> coins
+            </div>
+          </div>
+        </header>
+
+        <section id="profile-panel" class="panel profile-panel" hidden>
+          <div class="profile-header">
+            <div class="profile-ident">
+              <img id="profile-avatar" class="profile-avatar" src="/assets/null_trophy.png" alt="Profile avatar" />
+              <div>
+                <h2 id="profile-name">Player Profile</h2>
+                <p id="profile-id" class="muted"></p>
+              </div>
+            </div>
+            <button id="close-profile-button" class="close-profile" type="button">Close</button>
+          </div>
+
+          <div class="profile-grid">
+            <article class="profile-card">
+              <p class="k">Wallet</p>
+              <p id="profile-wallet" class="v">$0</p>
+            </article>
+            <article class="profile-card">
+              <p class="k">Level</p>
+              <p id="profile-level" class="v">1</p>
+            </article>
+            <article class="profile-card">
+              <p class="k">XP</p>
+              <p id="profile-xp" class="v">0/0</p>
+            </article>
+            <article class="profile-card">
+              <p class="k">Total Commands</p>
+              <p id="profile-commands" class="v">0</p>
+            </article>
+            <article class="profile-card">
+              <p class="k">Total Money Earned</p>
+              <p id="profile-earned" class="v">$0</p>
+            </article>
+            <article class="profile-card">
+              <p class="k">Trophies</p>
+              <button id="open-trophies-button" class="trophy-open" type="button">
+                <span id="profile-trophies" class="v">0</span>
+                <span class="trophy-open-label">Open Collection</span>
+              </button>
+            </article>
+            <article class="profile-card wide">
+              <p class="k">Joined</p>
+              <p id="profile-joined" class="v">-</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="trophy-panel" class="panel trophy-panel" hidden>
+          <div class="profile-header">
+            <h2>Trophy Collection</h2>
+            <button id="close-trophies-button" class="close-profile" type="button">Close</button>
+          </div>
+
+          <div class="trophy-grid">
+            <article class="trophy-card">
+              <img id="trophy-dig-image" class="trophy-img" src="/assets/null_trophy.png" alt="Collectors Greed trophy" />
+              <p class="trophy-name">Collectors Greed</p>
+              <p id="trophy-dig-count" class="trophy-count">x0</p>
+            </article>
+            <article class="trophy-card">
+              <img id="trophy-fish-image" class="trophy-img" src="/assets/null_trophy.png" alt="Midnight Ocean trophy" />
+              <p class="trophy-name">Midnight Ocean</p>
+              <p id="trophy-fish-count" class="trophy-count">x0</p>
+            </article>
+            <article class="trophy-card">
+              <img id="trophy-hunt-image" class="trophy-img" src="/assets/null_trophy.png" alt="Many Heads trophy" />
+              <p class="trophy-name">Many Heads</p>
+              <p id="trophy-hunt-count" class="trophy-count">x0</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="actions">
+          <button class="action-card" data-action="dig" type="button">
+            <img class="action-icon" src="/assets/dig.png" alt="Dig icon" />
+            <span class="label">Dig</span>
+          </button>
+          <button class="action-card" data-action="fish" type="button">
+            <img class="action-icon" src="/assets/fish.png" alt="Fish icon" />
+            <span class="label">Fish</span>
+          </button>
+          <button class="action-card" data-action="hunt" type="button">
+            <img class="action-icon" src="/assets/hunt.png" alt="Hunt icon" />
+            <span class="label">Hunt</span>
+          </button>
+        </section>
+
+        <section class="panel stage-wrap">
+          <div id="anim-dig" class="scene dig" hidden>
+            <div class="sky"></div>
+            <div class="sun"></div>
+            <div class="soil"></div>
+            <div class="hole"></div>
+            <div class="shovel">
+              <div class="grip"></div>
+              <div class="shaft"></div>
+              <div class="blade"></div>
+            </div>
+            <div class="clump clump-a"></div>
+            <div class="clump clump-b"></div>
+          </div>
+
+          <div id="anim-fish" class="scene fish" hidden>
+            <div class="sky"></div>
+            <div class="water"></div>
+            <div class="shore"></div>
+            <div class="rod">
+              <div class="pole"></div>
+              <div class="line"></div>
+              <div class="hook"></div>
+            </div>
+            <div class="splash splash-a"></div>
+            <div class="splash splash-b"></div>
+            <div class="fish-shape">
+              <div class="fish-eye"></div>
+            </div>
+          </div>
+
+          <div id="anim-hunt" class="scene hunt" hidden>
+            <div class="sky"></div>
+            <div class="field"></div>
+            <div class="bush"></div>
+            <div class="hunter">
+              <div class="head"></div>
+              <div class="body"></div>
+              <div class="arm"></div>
+              <div class="rifle"></div>
+            </div>
+            <div class="deer">
+              <div class="deer-body"></div>
+              <div class="deer-head"></div>
+              <div class="deer-leg leg-a"></div>
+              <div class="deer-leg leg-b"></div>
+            </div>
+            <div class="flash"></div>
+          </div>
+        </section>
+
+        <section class="panel wallet">
+          <p class="wallet-label">Wallet</p>
+          <p id="wallet-amount">$0</p>
+        </section>
+      </section>
+    </main>
+    <script src="/play.js"></script>
+  </body>
+</html>
