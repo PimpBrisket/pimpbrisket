@@ -30,6 +30,13 @@ Required API env vars for Discord website login:
 - `DISCORD_REDIRECT_URI` (for local: `http://localhost:3000/auth/discord/callback`)
 - `WEB_BASE_URL` (for local: `http://localhost:5173`)
 
+Optional API hardening env vars:
+
+- `ENABLE_REQUEST_LOGS` (default `true`)
+- `RATE_LIMIT_WINDOW_MS` (default `10000`)
+- `RATE_LIMIT_MAX_REQUESTS_PER_IP` (default `120`)
+- `RATE_LIMIT_MAX_ACTIONS_PER_USER` (default `8`)
+
 In Discord Developer Portal, add this redirect URI to your application OAuth2 settings:
 
 - `http://localhost:3000/auth/discord/callback`
