@@ -124,6 +124,13 @@ let actionMeta = FALLBACK_META;
 let cooldownTimer = null;
 let profileSyncTimer = null;
 let currentProfile = null;
+const appBasePath = window.location.pathname.replace(/\/(?:play(?:\.html)?|index\.html)?$/, "");
+
+function resolveAssetUrl(url) {
+  if (typeof url !== "string") return url;
+  if (url.startsWith("/assets/")) return `${appBasePath}${url}`;
+  return url;
+}
 
 function setStatus(message, tone = "") {
   statusEl.textContent = message;
@@ -207,7 +214,9 @@ function populateProfilePanel(profile) {
 function populateTrophyPanel(profile) {
   if (!profile?.trophyCollection) return;
 
-  const fallback = profile.trophyCollection.placeholderImage || "/assets/null_trophy.png";
+  const fallback = resolveAssetUrl(
+    profile.trophyCollection.placeholderImage || "/assets/null_trophy.png"
+  );
   const dig = profile.trophyCollection.dig;
   const fish = profile.trophyCollection.fish;
   const hunt = profile.trophyCollection.hunt;
@@ -215,7 +224,7 @@ function populateTrophyPanel(profile) {
   const applyTrophy = (imageEl, countEl, entry) => {
     if (!imageEl || !countEl || !entry) return;
     const count = Number(entry.count || 0);
-    imageEl.src = count > 0 ? entry.image : fallback;
+    imageEl.src = count > 0 ? resolveAssetUrl(entry.image) : fallback;
     countEl.textContent = `x${count}`;
   };
 
