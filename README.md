@@ -27,6 +27,7 @@ Key API env vars:
 
 - `HOST` (default `0.0.0.0`)
 - `PORT` (default `3000`)
+- `DATABASE_URL` (required Postgres connection string)
 - `ALLOWED_ORIGIN` (local: `http://localhost:5173`)
 - `WEB_BASE_URL` (local: `http://localhost:5173`)
 - `WEB_PLAY_PATH` (local: `/play`)
@@ -82,6 +83,7 @@ Frontend is hosted on GitHub Pages and API is hosted on Render.
 
 ### Render API env values
 
+- `DATABASE_URL=<Render Postgres connection string>`
 - `ALLOWED_ORIGIN=https://pimpbrisket.github.io`
 - `WEB_BASE_URL=https://pimpbrisket.github.io/pimpbrisket`
 - `WEB_PLAY_PATH=/play.html`
@@ -131,4 +133,3 @@ Expected response shape:
 2. Website sends user to API `/auth/discord/login`.
 3. API completes OAuth, registers user, redirects to website `play.html`.
 4. Web and bot both call the same API actions (`dig`, `fish`, `hunt`) and share cooldowns.
-

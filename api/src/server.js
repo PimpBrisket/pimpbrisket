@@ -3,7 +3,6 @@ require("dotenv").config();
 const cors = require("cors");
 const crypto = require("crypto");
 const express = require("express");
-const path = require("path");
 const {
   ACTION_COOLDOWN_MS,
   MAX_LEVEL,
@@ -49,6 +48,9 @@ function validateStartupConfig(config) {
   }
   if (!config.HOST || typeof config.HOST !== "string") {
     errors.push("HOST must be a non-empty string");
+  }
+  if (!config.DATABASE_URL || !isValidUrl(config.DATABASE_URL)) {
+    errors.push("DATABASE_URL must be a valid Postgres connection URL");
   }
   if (config.WEB_BASE_URL && !isValidUrl(config.WEB_BASE_URL)) {
     errors.push("WEB_BASE_URL must be a valid URL");
@@ -124,8 +126,7 @@ function createFixedWindowRateLimiter({
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
-const DB_FILE =
-  process.env.DB_FILE || path.join(__dirname, "..", "database.sqlite");
+const DATABASE_URL = process.env.DATABASE_URL || "";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "*";
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || "";
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || "";
@@ -148,11 +149,12 @@ const actionLockTokenStore = new Map();
 validateStartupConfig({
   PORT,
   HOST,
+  DATABASE_URL,
   WEB_BASE_URL,
   DISCORD_REDIRECT_URI
 });
 
-const db = createDatabase(DB_FILE);
+const db = createDatabase(DATABASE_URL);
 const allowedOrigins = ALLOWED_ORIGIN.split(",")
   .map((value) => value.trim())
   .filter(Boolean);
@@ -306,13 +308,13 @@ function cleanupActionLockTokens() {
   }
 }
 
-function pingDatabase() {
-  return new Promise((resolve) => {
-    db.get("SELECT 1 AS ok", (err, row) => {
-      if (err) return resolve({ ok: false, error: err.message });
-      return resolve({ ok: row?.ok === 1 });
-    });
-  });
+async function pingDatabase() {
+  try {
+    const result = await db.query("SELECT 1 AS ok");
+    return { ok: result.rows?.[0]?.ok === 1 };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 }
 
 app.get("/health", async (_req, res) => {
@@ -678,9 +680,12 @@ initDatabase(db)
     process.exit(1);
   });
 
-function closeAndExit() {
-  db.close();
-  process.exit(0);
+async function closeAndExit() {
+  try {
+    await db.end();
+  } finally {
+    process.exit(0);
+  }
 }
 
 process.on("SIGINT", closeAndExit);

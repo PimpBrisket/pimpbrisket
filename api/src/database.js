@@ -1,7 +1,5 @@
-const path = require("path");
-const sqlite3 = require("sqlite3").verbose();
+const { Pool } = require("pg");
 
-const DEFAULT_DB_FILE = path.join(__dirname, "..", "database.sqlite");
 const ACTION_COOLDOWN_MS = 5000;
 const MAX_LEVEL = 100;
 
@@ -77,6 +75,27 @@ const ACTIONS = {
   }
 };
 
+const PLAYER_SELECT_SQL = `SELECT
+  "discordUserId",
+  money,
+  "createdAt",
+  "updatedAt",
+  "digCooldownUntil",
+  "fishCooldownUntil",
+  "huntCooldownUntil",
+  xp,
+  "totalXpEarned",
+  level,
+  "totalCommandsUsed",
+  "totalMoneyEarned",
+  "digTrophyCount",
+  "fishTrophyCount",
+  "huntTrophyCount",
+  "discordUsername",
+  "discordAvatarHash"
+ FROM players
+ WHERE "discordUserId" = $1`;
+
 function xpRequiredForLevel(level) {
   if (level >= MAX_LEVEL) return 0;
   if (level <= 10) return 60 + level * 18;
@@ -88,35 +107,18 @@ function levelRewardCoins(level) {
   return 40 + level * 14;
 }
 
-function createDatabase(dbFile = DEFAULT_DB_FILE) {
-  return new sqlite3.Database(dbFile);
-}
-
-function run(db, sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function onRun(err) {
-      if (err) return reject(err);
-      resolve(this);
-    });
+function createDatabase(connectionString) {
+  return new Pool({
+    connectionString,
+    ssl: connectionString.includes("localhost")
+      ? false
+      : { rejectUnauthorized: false }
   });
 }
 
-function get(db, sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => {
-      if (err) return reject(err);
-      resolve(row || null);
-    });
-  });
-}
-
-function all(db, sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) return reject(err);
-      resolve(rows);
-    });
-  });
+async function getPlayerByDiscordId(db, discordUserId, client = db) {
+  const result = await client.query(PLAYER_SELECT_SQL, [discordUserId]);
+  return result.rows[0] || null;
 }
 
 function randomInt(min, max) {
@@ -134,211 +136,88 @@ function rollWeightedTier(tiers) {
 }
 
 async function initDatabase(db) {
-  await run(
-    db,
-    `CREATE TABLE IF NOT EXISTS players (
-      discordUserId TEXT PRIMARY KEY,
-      money INTEGER NOT NULL DEFAULT 0,
-      createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-      updatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-    )`
-  );
+  await db.query(`CREATE TABLE IF NOT EXISTS players (
+    "discordUserId" TEXT PRIMARY KEY,
+    money INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "digCooldownUntil" BIGINT NOT NULL DEFAULT 0,
+    "fishCooldownUntil" BIGINT NOT NULL DEFAULT 0,
+    "huntCooldownUntil" BIGINT NOT NULL DEFAULT 0,
+    xp INTEGER NOT NULL DEFAULT 0,
+    "totalXpEarned" INTEGER NOT NULL DEFAULT 0,
+    level INTEGER NOT NULL DEFAULT 1,
+    "totalCommandsUsed" INTEGER NOT NULL DEFAULT 0,
+    "totalMoneyEarned" INTEGER NOT NULL DEFAULT 0,
+    "digTrophyCount" INTEGER NOT NULL DEFAULT 0,
+    "fishTrophyCount" INTEGER NOT NULL DEFAULT 0,
+    "huntTrophyCount" INTEGER NOT NULL DEFAULT 0,
+    "discordUsername" TEXT,
+    "discordAvatarHash" TEXT
+  )`);
 
-  await run(
-    db,
-    `CREATE TRIGGER IF NOT EXISTS players_set_updatedAt
-      AFTER UPDATE ON players
-      FOR EACH ROW
-      WHEN NEW.updatedAt = OLD.updatedAt
-    BEGIN
-      UPDATE players
-      SET updatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-      WHERE discordUserId = OLD.discordUserId;
-    END`
-  );
-
-  const tableColumns = await all(db, "PRAGMA table_info(players)");
-  const existingColumns = new Set(tableColumns.map((column) => column.name));
   const requiredColumns = [
-    { name: "digCooldownUntil", sqlType: "INTEGER NOT NULL DEFAULT 0" },
-    { name: "fishCooldownUntil", sqlType: "INTEGER NOT NULL DEFAULT 0" },
-    { name: "huntCooldownUntil", sqlType: "INTEGER NOT NULL DEFAULT 0" },
-    { name: "xp", sqlType: "INTEGER NOT NULL DEFAULT 0" },
-    { name: "totalXpEarned", sqlType: "INTEGER NOT NULL DEFAULT 0" },
-    { name: "level", sqlType: "INTEGER NOT NULL DEFAULT 1" },
-    { name: "totalCommandsUsed", sqlType: "INTEGER NOT NULL DEFAULT 0" },
-    { name: "totalMoneyEarned", sqlType: "INTEGER NOT NULL DEFAULT 0" },
-    { name: "digTrophyCount", sqlType: "INTEGER NOT NULL DEFAULT 0" },
-    { name: "fishTrophyCount", sqlType: "INTEGER NOT NULL DEFAULT 0" },
-    { name: "huntTrophyCount", sqlType: "INTEGER NOT NULL DEFAULT 0" },
-    { name: "discordUsername", sqlType: "TEXT" },
-    { name: "discordAvatarHash", sqlType: "TEXT" }
+    `"digCooldownUntil" BIGINT NOT NULL DEFAULT 0`,
+    `"fishCooldownUntil" BIGINT NOT NULL DEFAULT 0`,
+    `"huntCooldownUntil" BIGINT NOT NULL DEFAULT 0`,
+    `xp INTEGER NOT NULL DEFAULT 0`,
+    `"totalXpEarned" INTEGER NOT NULL DEFAULT 0`,
+    `level INTEGER NOT NULL DEFAULT 1`,
+    `"totalCommandsUsed" INTEGER NOT NULL DEFAULT 0`,
+    `"totalMoneyEarned" INTEGER NOT NULL DEFAULT 0`,
+    `"digTrophyCount" INTEGER NOT NULL DEFAULT 0`,
+    `"fishTrophyCount" INTEGER NOT NULL DEFAULT 0`,
+    `"huntTrophyCount" INTEGER NOT NULL DEFAULT 0`,
+    `"discordUsername" TEXT`,
+    `"discordAvatarHash" TEXT`
   ];
 
-  for (const column of requiredColumns) {
-    if (existingColumns.has(column.name)) continue;
-    await run(db, `ALTER TABLE players ADD COLUMN ${column.name} ${column.sqlType}`);
+  for (const colDef of requiredColumns) {
+    await db.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS ${colDef}`);
   }
-
-  const legacyPlayerTable = await get(
-    db,
-    `SELECT name FROM sqlite_master
-     WHERE type = 'table' AND name = 'Player'`
-  );
-
-  if (legacyPlayerTable) {
-    await run(
-      db,
-      `INSERT OR IGNORE INTO players (
-         discordUserId,
-         money,
-         createdAt,
-         updatedAt,
-         digCooldownUntil,
-         fishCooldownUntil,
-         huntCooldownUntil,
-         xp,
-         totalXpEarned,
-         level,
-         totalCommandsUsed,
-         totalMoneyEarned,
-         digTrophyCount,
-         fishTrophyCount,
-         huntTrophyCount,
-         discordUsername,
-         discordAvatarHash
-       )
-       SELECT
-         discordUserId,
-         money,
-         strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-         strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-         0,
-         0,
-         0,
-         0,
-         0,
-         1,
-         0,
-         0,
-         0,
-         0,
-         0,
-         NULL,
-         NULL
-       FROM Player`
-    );
-  }
-}
-
-function getPlayerByDiscordId(db, discordUserId) {
-  return get(
-    db,
-    `SELECT
-      discordUserId,
-      money,
-      createdAt,
-      updatedAt,
-      digCooldownUntil,
-      fishCooldownUntil,
-      huntCooldownUntil,
-      xp,
-      totalXpEarned,
-      level,
-      totalCommandsUsed,
-      totalMoneyEarned,
-      digTrophyCount,
-      fishTrophyCount,
-      huntTrophyCount,
-      discordUsername,
-      discordAvatarHash
-     FROM players
-     WHERE discordUserId = ?`,
-    [discordUserId]
-  );
 }
 
 async function registerPlayer(db, discordUserId, profile = null) {
-  const insertResult = await run(
-    db,
-    `INSERT OR IGNORE INTO players (discordUserId, money)
-     VALUES (?, 0)`,
+  const insertResult = await db.query(
+    `INSERT INTO players ("discordUserId", money)
+     VALUES ($1, 0)
+     ON CONFLICT ("discordUserId") DO NOTHING
+     RETURNING "discordUserId"`,
     [discordUserId]
   );
 
   if (profile && (profile.discordUsername || profile.discordAvatarHash)) {
-    await run(
-      db,
+    await db.query(
       `UPDATE players
-       SET discordUsername = COALESCE(?, discordUsername),
-           discordAvatarHash = COALESCE(?, discordAvatarHash)
-       WHERE discordUserId = ?`,
+       SET "discordUsername" = COALESCE($1, "discordUsername"),
+           "discordAvatarHash" = COALESCE($2, "discordAvatarHash"),
+           "updatedAt" = NOW()
+       WHERE "discordUserId" = $3`,
       [profile.discordUsername || null, profile.discordAvatarHash || null, discordUserId]
     );
   }
 
   const player = await getPlayerByDiscordId(db, discordUserId);
-  return { player, created: insertResult.changes === 1 };
+  return { player, created: insertResult.rowCount === 1 };
 }
 
 async function adjustMoney(db, discordUserId, amount) {
-  await run(
-    db,
-    `INSERT OR IGNORE INTO players (discordUserId, money)
-     VALUES (?, 0)`,
+  await db.query(
+    `INSERT INTO players ("discordUserId", money)
+     VALUES ($1, 0)
+     ON CONFLICT ("discordUserId") DO NOTHING`,
     [discordUserId]
   );
 
-  await run(
-    db,
+  await db.query(
     `UPDATE players
-     SET money = money + ?
-     WHERE discordUserId = ?`,
+     SET money = money + $1,
+         "updatedAt" = NOW()
+     WHERE "discordUserId" = $2`,
     [amount, discordUserId]
   );
 
   return getPlayerByDiscordId(db, discordUserId);
-}
-
-async function lockActionCooldown(db, discordUserId, action) {
-  const actionConfig = getActionConfig(action);
-  if (!actionConfig) throw new Error("Unsupported action");
-
-  await run(
-    db,
-    `INSERT OR IGNORE INTO players (discordUserId, money)
-     VALUES (?, 0)`,
-    [discordUserId]
-  );
-
-  const playerBefore = await getPlayerByDiscordId(db, discordUserId);
-  const now = Date.now();
-  const cooldownUntil = Number(playerBefore[actionConfig.cooldownColumn]) || 0;
-  if (cooldownUntil > now) {
-    return {
-      ok: false,
-      cooldownUntil,
-      cooldownRemainingMs: cooldownUntil - now,
-      player: playerBefore
-    };
-  }
-
-  const nextCooldownUntil = now + ACTION_COOLDOWN_MS;
-  await run(
-    db,
-    `UPDATE players
-     SET ${actionConfig.cooldownColumn} = ?
-     WHERE discordUserId = ?`,
-    [nextCooldownUntil, discordUserId]
-  );
-
-  const playerAfter = await getPlayerByDiscordId(db, discordUserId);
-  return {
-    ok: true,
-    cooldownUntil: nextCooldownUntil,
-    cooldownRemainingMs: ACTION_COOLDOWN_MS,
-    player: playerAfter
-  };
 }
 
 function getActionConfig(action) {
@@ -374,119 +253,192 @@ function getActionMetadata() {
   };
 }
 
+async function lockActionCooldown(db, discordUserId, action) {
+  const actionConfig = getActionConfig(action);
+  if (!actionConfig) throw new Error("Unsupported action");
+
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO players ("discordUserId", money)
+       VALUES ($1, 0)
+       ON CONFLICT ("discordUserId") DO NOTHING`,
+      [discordUserId]
+    );
+
+    const currentPlayerResult = await client.query(
+      `${PLAYER_SELECT_SQL} FOR UPDATE`,
+      [discordUserId]
+    );
+    const playerBefore = currentPlayerResult.rows[0];
+    const now = Date.now();
+    const cooldownUntil = Number(playerBefore[actionConfig.cooldownColumn]) || 0;
+    if (cooldownUntil > now) {
+      await client.query("COMMIT");
+      return {
+        ok: false,
+        cooldownUntil,
+        cooldownRemainingMs: cooldownUntil - now,
+        player: playerBefore
+      };
+    }
+
+    const nextCooldownUntil = now + ACTION_COOLDOWN_MS;
+    await client.query(
+      `UPDATE players
+       SET "${actionConfig.cooldownColumn}" = $1,
+           "updatedAt" = NOW()
+       WHERE "discordUserId" = $2`,
+      [nextCooldownUntil, discordUserId]
+    );
+    const playerAfter = await getPlayerByDiscordId(db, discordUserId, client);
+    await client.query("COMMIT");
+    return {
+      ok: true,
+      cooldownUntil: nextCooldownUntil,
+      cooldownRemainingMs: ACTION_COOLDOWN_MS,
+      player: playerAfter
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 async function performAction(db, discordUserId, action, options = {}) {
   const actionConfig = getActionConfig(action);
   if (!actionConfig) throw new Error("Unsupported action");
+
   const {
     ignoreCooldown = false,
     preserveExistingCooldown = false,
     cashMultiplier = 1
   } = options;
 
-  await run(
-    db,
-    `INSERT OR IGNORE INTO players (discordUserId, money)
-     VALUES (?, 0)`,
-    [discordUserId]
-  );
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO players ("discordUserId", money)
+       VALUES ($1, 0)
+       ON CONFLICT ("discordUserId") DO NOTHING`,
+      [discordUserId]
+    );
 
-  const playerBefore = await getPlayerByDiscordId(db, discordUserId);
-  const now = Date.now();
-  const cooldownUntil = Number(playerBefore[actionConfig.cooldownColumn]) || 0;
-  if (!ignoreCooldown && cooldownUntil > now) {
+    const currentPlayerResult = await client.query(
+      `${PLAYER_SELECT_SQL} FOR UPDATE`,
+      [discordUserId]
+    );
+    const playerBefore = currentPlayerResult.rows[0];
+
+    const now = Date.now();
+    const cooldownUntil = Number(playerBefore[actionConfig.cooldownColumn]) || 0;
+    if (!ignoreCooldown && cooldownUntil > now) {
+      await client.query("COMMIT");
+      return {
+        ok: false,
+        cooldownUntil,
+        cooldownRemainingMs: cooldownUntil - now,
+        player: playerBefore
+      };
+    }
+
+    const payoutTier = rollWeightedTier(actionConfig.payoutTiers);
+    const baseRewardRaw = randomInt(payoutTier.min, payoutTier.max);
+    const bonusTier = rollWeightedTier(actionConfig.bonusTiers);
+    const bonusCoinsRaw = bonusTier.coins;
+    const xpGained = randomInt(actionConfig.xpMin, actionConfig.xpMax);
+
+    let nextLevel = Math.max(1, Number(playerBefore.level) || 1);
+    let nextXp = Math.max(0, Number(playerBefore.xp) || 0) + xpGained;
+    let levelRewardTotal = 0;
+    const levelUps = [];
+
+    while (nextLevel < MAX_LEVEL) {
+      const neededXp = xpRequiredForLevel(nextLevel);
+      if (nextXp < neededXp) break;
+      nextXp -= neededXp;
+      nextLevel += 1;
+      const levelRewardRaw = levelRewardCoins(nextLevel);
+      const levelReward = Math.round(levelRewardRaw * cashMultiplier);
+      levelRewardTotal += levelReward;
+      levelUps.push({ level: nextLevel, rewardCoins: levelReward });
+    }
+
+    if (nextLevel >= MAX_LEVEL) {
+      nextLevel = MAX_LEVEL;
+      nextXp = 0;
+    }
+
+    const baseReward = Math.round(baseRewardRaw * cashMultiplier);
+    const bonusCoins = Math.round(bonusCoinsRaw * cashMultiplier);
+    const totalRewardCoins = baseReward + bonusCoins + levelRewardTotal;
+    const digTrophyGain = bonusTier.itemKey === "dig_trophy" ? 1 : 0;
+    const fishTrophyGain = bonusTier.itemKey === "fish_trophy" ? 1 : 0;
+    const huntTrophyGain = bonusTier.itemKey === "hunt_trophy" ? 1 : 0;
+
+    const nextCooldownUntil =
+      preserveExistingCooldown && cooldownUntil > now
+        ? cooldownUntil
+        : now + ACTION_COOLDOWN_MS;
+
+    await client.query(
+      `UPDATE players
+       SET money = money + $1,
+           xp = $2,
+           "totalXpEarned" = "totalXpEarned" + $3,
+           level = $4,
+           "totalCommandsUsed" = "totalCommandsUsed" + 1,
+           "totalMoneyEarned" = "totalMoneyEarned" + $5,
+           "digTrophyCount" = "digTrophyCount" + $6,
+           "fishTrophyCount" = "fishTrophyCount" + $7,
+           "huntTrophyCount" = "huntTrophyCount" + $8,
+           "${actionConfig.cooldownColumn}" = $9,
+           "updatedAt" = NOW()
+       WHERE "discordUserId" = $10`,
+      [
+        totalRewardCoins,
+        nextXp,
+        xpGained,
+        nextLevel,
+        totalRewardCoins,
+        digTrophyGain,
+        fishTrophyGain,
+        huntTrophyGain,
+        nextCooldownUntil,
+        discordUserId
+      ]
+    );
+
+    const playerAfter = await getPlayerByDiscordId(db, discordUserId, client);
+    await client.query("COMMIT");
     return {
-      ok: false,
-      cooldownUntil,
-      cooldownRemainingMs: cooldownUntil - now,
-      player: playerBefore
+      ok: true,
+      cooldownUntil: nextCooldownUntil,
+      cooldownRemainingMs: ACTION_COOLDOWN_MS,
+      reward: {
+        totalCoins: totalRewardCoins,
+        baseCoins: baseReward,
+        baseLabel: payoutTier.label,
+        bonusCoins,
+        bonusLabel: bonusTier.label,
+        bonusItemKey: bonusTier.itemKey || null,
+        bonusItemImage: bonusTier.itemImage || null,
+        xpGained,
+        levelRewardCoins: levelRewardTotal,
+        levelUps
+      },
+      player: playerAfter
     };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
-
-  const payoutTier = rollWeightedTier(actionConfig.payoutTiers);
-  const baseRewardRaw = randomInt(payoutTier.min, payoutTier.max);
-  const bonusTier = rollWeightedTier(actionConfig.bonusTiers);
-  const bonusCoinsRaw = bonusTier.coins;
-  const xpGained = randomInt(actionConfig.xpMin, actionConfig.xpMax);
-
-  let nextLevel = Math.max(1, Number(playerBefore.level) || 1);
-  let nextXp = Math.max(0, Number(playerBefore.xp) || 0) + xpGained;
-  let levelRewardTotal = 0;
-  const levelUps = [];
-
-  while (nextLevel < MAX_LEVEL) {
-    const neededXp = xpRequiredForLevel(nextLevel);
-    if (nextXp < neededXp) break;
-    nextXp -= neededXp;
-    nextLevel += 1;
-    const levelRewardRaw = levelRewardCoins(nextLevel);
-    const levelReward = Math.round(levelRewardRaw * cashMultiplier);
-    levelRewardTotal += levelReward;
-    levelUps.push({ level: nextLevel, rewardCoins: levelReward });
-  }
-
-  if (nextLevel >= MAX_LEVEL) {
-    nextLevel = MAX_LEVEL;
-    nextXp = 0;
-  }
-
-  const baseReward = Math.round(baseRewardRaw * cashMultiplier);
-  const bonusCoins = Math.round(bonusCoinsRaw * cashMultiplier);
-  const totalRewardCoins = baseReward + bonusCoins + levelRewardTotal;
-  const digTrophyGain = bonusTier.itemKey === "dig_trophy" ? 1 : 0;
-  const fishTrophyGain = bonusTier.itemKey === "fish_trophy" ? 1 : 0;
-  const huntTrophyGain = bonusTier.itemKey === "hunt_trophy" ? 1 : 0;
-  const nextCooldownUntil =
-    preserveExistingCooldown && cooldownUntil > now
-      ? cooldownUntil
-      : now + ACTION_COOLDOWN_MS;
-
-  await run(
-    db,
-    `UPDATE players
-     SET money = money + ?,
-         xp = ?,
-         totalXpEarned = totalXpEarned + ?,
-         level = ?,
-         totalCommandsUsed = totalCommandsUsed + 1,
-         totalMoneyEarned = totalMoneyEarned + ?,
-         digTrophyCount = digTrophyCount + ?,
-         fishTrophyCount = fishTrophyCount + ?,
-         huntTrophyCount = huntTrophyCount + ?,
-         ${actionConfig.cooldownColumn} = ?
-     WHERE discordUserId = ?`,
-    [
-      totalRewardCoins,
-      nextXp,
-      xpGained,
-      nextLevel,
-      totalRewardCoins,
-      digTrophyGain,
-      fishTrophyGain,
-      huntTrophyGain,
-      nextCooldownUntil,
-      discordUserId
-    ]
-  );
-
-  const playerAfter = await getPlayerByDiscordId(db, discordUserId);
-  return {
-    ok: true,
-    cooldownUntil: nextCooldownUntil,
-    cooldownRemainingMs: ACTION_COOLDOWN_MS,
-    reward: {
-      totalCoins: totalRewardCoins,
-      baseCoins: baseReward,
-      baseLabel: payoutTier.label,
-      bonusCoins,
-      bonusLabel: bonusTier.label,
-      bonusItemKey: bonusTier.itemKey || null,
-      bonusItemImage: bonusTier.itemImage || null,
-      xpGained,
-      levelRewardCoins: levelRewardTotal,
-      levelUps
-    },
-    player: playerAfter
-  };
 }
 
 module.exports = {
