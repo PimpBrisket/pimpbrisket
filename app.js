@@ -12,7 +12,7 @@ function setLoginHref() {
 }
 
 async function loadConfig() {
-  if (window.location.hostname.endsWith("github.io")) return;
+  if (window.location.hostname.includes("github.io")) return;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 1500);
@@ -38,8 +38,10 @@ function handleAuthError() {
 
 async function init() {
   setLoginHref();
-  await loadConfig();
-  setLoginHref();
+  if (!window.location.hostname.includes("github.io")) {
+    await loadConfig();
+    setLoginHref();
+  }
   handleAuthError();
 }
 

@@ -302,7 +302,7 @@ function renderChanceTable(action) {
 }
 
 async function loadConfig() {
-  if (window.location.hostname.endsWith("github.io")) return;
+  if (window.location.hostname.includes("github.io")) return;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 1500);
