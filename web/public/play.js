@@ -215,6 +215,12 @@ function formatActionLabel(action) {
   return action.charAt(0).toUpperCase() + action.slice(1).toLowerCase();
 }
 
+function setNodeVisible(node, visible, shownDisplay = "") {
+  if (!node) return;
+  node.hidden = !visible;
+  node.style.display = visible ? shownDisplay : "none";
+}
+
 function formatCoins(value) {
   return Math.floor(Number(value || 0)).toLocaleString("en-US");
 }
@@ -868,9 +874,9 @@ async function performAction(action) {
 }
 
 function hideAllGambleControls() {
-  if (coinflipControlsEl) coinflipControlsEl.hidden = true;
-  if (blackjackControlsEl) blackjackControlsEl.hidden = true;
-  if (slotsControlsEl) slotsControlsEl.hidden = true;
+  setNodeVisible(coinflipControlsEl, false);
+  setNodeVisible(blackjackControlsEl, false);
+  setNodeVisible(slotsControlsEl, false);
 }
 
 function resetBlackjackState() {
@@ -884,6 +890,8 @@ function resetBlackjackState() {
   };
   if (blackjackHitButton) blackjackHitButton.hidden = true;
   if (blackjackStandButton) blackjackStandButton.hidden = true;
+  if (blackjackHitButton) blackjackHitButton.style.display = "none";
+  if (blackjackStandButton) blackjackStandButton.style.display = "none";
 }
 
 function updateChancePanelForMode() {
@@ -904,10 +912,10 @@ function setMode(mode) {
   currentMode = mode === "gambling" ? "gambling" : "actions";
   const inGambling = currentMode === "gambling";
   if (mainTitleEl) mainTitleEl.textContent = inGambling ? "Gambling Hall" : "Action Center";
-  if (regularActionsSection) regularActionsSection.hidden = inGambling;
-  if (gamblingActionsSection) gamblingActionsSection.hidden = !inGambling;
-  if (gamblingPanel) gamblingPanel.hidden = !inGambling;
-  if (actionStageEl) actionStageEl.hidden = inGambling;
+  setNodeVisible(regularActionsSection, !inGambling, "grid");
+  setNodeVisible(gamblingActionsSection, inGambling, "grid");
+  setNodeVisible(gamblingPanel, inGambling, "block");
+  setNodeVisible(actionStageEl, !inGambling, "block");
   if (!inGambling) {
     hideAllGambleControls();
     if (gamblingResultTextEl) gamblingResultTextEl.textContent = "No bet placed yet.";
@@ -924,13 +932,13 @@ function setActiveGambleGame(game) {
   resetBlackjackState();
   if (gamblingResultTextEl) gamblingResultTextEl.textContent = "No bet placed yet.";
   if (game === "coinflip" && coinflipControlsEl) {
-    coinflipControlsEl.hidden = false;
+    setNodeVisible(coinflipControlsEl, true, "flex");
     if (gamblingStatusEl) gamblingStatusEl.textContent = "Coinflip active. Choose Heads or Tails.";
   } else if (game === "blackjack" && blackjackControlsEl) {
-    blackjackControlsEl.hidden = false;
+    setNodeVisible(blackjackControlsEl, true, "flex");
     if (gamblingStatusEl) gamblingStatusEl.textContent = "Blackjack active. Press Deal to start a hand.";
   } else if (game === "slots" && slotsControlsEl) {
-    slotsControlsEl.hidden = false;
+    setNodeVisible(slotsControlsEl, true, "flex");
     if (gamblingStatusEl) gamblingStatusEl.textContent = "Slots active. Press Spin.";
   }
 }
@@ -1003,8 +1011,14 @@ function startBlackjackHand() {
   blackjackState.dealer = [drawCard(), drawCard()];
   applyWalletDelta(-bet);
 
-  if (blackjackHitButton) blackjackHitButton.hidden = false;
-  if (blackjackStandButton) blackjackStandButton.hidden = false;
+  if (blackjackHitButton) {
+    blackjackHitButton.hidden = false;
+    blackjackHitButton.style.display = "";
+  }
+  if (blackjackStandButton) {
+    blackjackStandButton.hidden = false;
+    blackjackStandButton.style.display = "";
+  }
   const playerTotal = handValue(blackjackState.player);
   if (gamblingResultTextEl) {
     gamblingResultTextEl.textContent = `Player: ${blackjackState.player.join(", ")} (${playerTotal}) | Dealer: ${blackjackState.dealer[0]}, ?`;
