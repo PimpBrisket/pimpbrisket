@@ -630,6 +630,48 @@ body {
   font-weight: 700;
 }
 
+.slots-payouts {
+  margin-top: 10px;
+  border: 1px solid rgba(129, 149, 175, 0.35);
+  border-radius: 10px;
+  background: rgba(10, 20, 35, 0.85);
+  padding: 10px;
+}
+
+.slots-payouts .k {
+  margin: 0 0 8px;
+  color: #98afcc;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.slots-payout-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.slots-payout-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: #e5eefb;
+}
+
+.slots-payout-list strong {
+  color: #86efac;
+  font-size: 0.84rem;
+}
+
+.slots-payout-note {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+}
+
 .risk-sidebar {
   border: 1px solid rgba(129, 149, 175, 0.35);
   border-radius: 10px;

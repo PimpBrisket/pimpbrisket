@@ -60,6 +60,7 @@ const gamblingPanel = document.getElementById("gambling-panel");
 const actionStageEl = document.getElementById("action-stage");
 const gamblingStatusEl = document.getElementById("gambling-status");
 const gamblingResultTextEl = document.getElementById("gambling-result-text");
+const slotsPayoutsEl = document.getElementById("slots-payouts");
 const coinflipControlsEl = document.getElementById("coinflip-controls");
 const blackjackControlsEl = document.getElementById("blackjack-controls");
 const slotsControlsEl = document.getElementById("slots-controls");
@@ -187,6 +188,30 @@ let blackjackState = {
   risk: 0,
   rewardMultiplier: 1
 };
+const SLOT_SYMBOLS = ["Cherry", "Bell", "BAR", "Diamond", "7"];
+const SLOT_COMBO_PAYOUTS = [
+  { label: "7 | 7 | 7", matches: (reels) => reels.every((symbol) => symbol === "7"), baseMultiplier: 6.0 },
+  {
+    label: "Diamond | Diamond | Diamond",
+    matches: (reels) => reels.every((symbol) => symbol === "Diamond"),
+    baseMultiplier: 4.5
+  },
+  {
+    label: "BAR | BAR | BAR",
+    matches: (reels) => reels.every((symbol) => symbol === "BAR"),
+    baseMultiplier: 3.2
+  },
+  {
+    label: "Any other 3 of a kind",
+    matches: (reels) => new Set(reels).size === 1,
+    baseMultiplier: 2.4
+  },
+  {
+    label: "Any 2 of a kind",
+    matches: (reels) => new Set(reels).size === 2,
+    baseMultiplier: 0.8
+  }
+];
 
 async function readJsonSafely(response) {
   const text = await response.text();
@@ -877,6 +902,7 @@ function hideAllGambleControls() {
   setNodeVisible(coinflipControlsEl, false);
   setNodeVisible(blackjackControlsEl, false);
   setNodeVisible(slotsControlsEl, false);
+  setNodeVisible(slotsPayoutsEl, false);
 }
 
 function resetBlackjackState() {
@@ -939,6 +965,7 @@ function setActiveGambleGame(game) {
     if (gamblingStatusEl) gamblingStatusEl.textContent = "Blackjack active. Press Deal to start a hand.";
   } else if (game === "slots" && slotsControlsEl) {
     setNodeVisible(slotsControlsEl, true, "flex");
+    setNodeVisible(slotsPayoutsEl, true, "block");
     if (gamblingStatusEl) gamblingStatusEl.textContent = "Slots active. Press Spin.";
   }
 }
@@ -1105,25 +1132,21 @@ function spinSlots() {
 
   const risk = getRiskPercent();
   const rewardMultiplier = getRiskRewardMultiplier(risk);
-  const symbols = ["Cherry", "Bell", "BAR", "Diamond", "7"];
-  const roll = () => symbols[Math.floor(Math.random() * symbols.length)];
+  const roll = () => SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)];
   const reels = [roll(), roll(), roll()];
 
-  const uniqueCount = new Set(reels).size;
+  const combo = SLOT_COMBO_PAYOUTS.find((entry) => entry.matches(reels));
   let change = -bet;
-  if (uniqueCount === 1) {
-    const jackpotProfit = Math.floor(bet * (2.4 + rewardMultiplier));
-    change = jackpotProfit;
-  } else if (uniqueCount === 2) {
-    const smallProfit = Math.floor(bet * (0.55 + rewardMultiplier * 0.35));
-    change = smallProfit;
+  if (combo) {
+    const profit = Math.floor(bet * combo.baseMultiplier * rewardMultiplier);
+    change = profit;
   }
 
   applyWalletDelta(change);
   if (gamblingResultTextEl) {
     const reelText = reels.join(" | ");
-    if (change >= 0) {
-      gamblingResultTextEl.textContent = `${reelText} -> You won $${formatCoins(change)}.`;
+    if (combo && change >= 0) {
+      gamblingResultTextEl.textContent = `${reelText} -> ${combo.label} hit! You won $${formatCoins(change)}.`;
     } else {
       gamblingResultTextEl.textContent = `${reelText} -> You lost $${formatCoins(Math.abs(change))}.`;
     }
