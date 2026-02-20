@@ -189,7 +189,7 @@ body {
 .user-corner {
   position: absolute;
   right: 12px;
-  top: 12px;
+  top: 7px;
   z-index: 5;
 }
 
@@ -910,10 +910,18 @@ body {
 @media (max-width: 1040px) {
   .page-layout {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "main"
+      "loot";
   }
 
   .chance-panel {
     position: static;
+    grid-area: loot;
+  }
+
+  .main-column {
+    grid-area: main;
   }
 }
 
@@ -921,7 +929,7 @@ body {
   .scene.dig .scene-gif {
     object-fit: contain;
     object-position: center bottom;
-    transform: scale(1.75);
+    transform: scale(1.5);
     transform-origin: center bottom;
   }
 
