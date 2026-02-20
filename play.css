@@ -103,6 +103,20 @@ body {
   text-align: right;
 }
 
+.chance-input {
+  width: 70px;
+  background: #0f1d33;
+  border: 1px solid #4d6483;
+  color: #e5eefb;
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin-left: 4px;
+}
+
+.dev-loot-controls {
+  margin-top: 12px;
+}
+
 .level-row {
   display: grid;
   grid-template-columns: 90px 1fr 140px;
@@ -290,6 +304,15 @@ body {
   border-radius: 8px;
   padding: 7px 10px;
   min-width: 120px;
+}
+
+.dev-row select {
+  background: #0f1d33;
+  border: 1px solid #4d6483;
+  color: #e5eefb;
+  border-radius: 8px;
+  padding: 7px 10px;
+  min-width: 180px;
 }
 
 .dev-textarea {
