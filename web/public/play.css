@@ -918,13 +918,6 @@ body {
 }
 
 @media (max-width: 760px) {
-  .scene.dig .scene-gif {
-    object-fit: contain;
-    object-position: center bottom;
-    transform: scale(1.12);
-    transform-origin: center bottom;
-  }
-
   .actions {
     grid-template-columns: 1fr;
   }
