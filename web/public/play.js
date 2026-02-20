@@ -145,6 +145,7 @@ let isDevOwner = false;
 let isDevModeActive = false;
 let selectedChanceAction = "dig";
 let devSaveTimer = null;
+let digAnimationVersion = 0;
 
 function resolveAssetUrl(url) {
   if (typeof url !== "string") return url;
@@ -164,7 +165,8 @@ function setDigAnimationVariant(bonusLabel) {
     : "DugDug.png";
   if (bonusLabel === "Gold Coin") assetName = "DugDugCoin.png";
   if (bonusLabel === "Da Bone") assetName = "DugDugBone.png";
-  digAnimationImageEl.src = `./assets/${assetName}?v=4`;
+  digAnimationVersion += 1;
+  digAnimationImageEl.src = `./assets/${assetName}?v=${digAnimationVersion}`;
 }
 
 function setStatus(message, tone = "") {
