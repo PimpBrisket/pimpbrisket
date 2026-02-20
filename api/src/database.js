@@ -294,6 +294,7 @@ async function getPlayerByDiscordId(db, discordUserId, client = db) {
   return {
     ...row,
     timezone: row.timezone ? safeTimeZone(row.timezone) : null,
+    devConfig: sanitizeDevConfig(row.devConfig || {}),
     upgrades: sanitizeUpgrades(row.upgrades || {}),
     achievementState: sanitizeAchievementState(row.achievementState || {})
   };
@@ -422,13 +423,21 @@ function sanitizeActionOverride(defaultAction, override) {
 }
 
 function sanitizeDevConfig(input) {
-  const output = { actions: {} };
+  const output = {
+    actions: {},
+    freezeMoney: false
+  };
   if (!input || typeof input !== "object") return output;
   const incomingActions = input.actions && typeof input.actions === "object" ? input.actions : {};
+  output.freezeMoney = input.freezeMoney === true;
   for (const actionKey of Object.keys(ACTIONS)) {
     output.actions[actionKey] = sanitizeActionOverride(ACTIONS[actionKey], incomingActions[actionKey]);
   }
   return output;
+}
+
+function isMoneyFrozen(player) {
+  return player?.devConfig?.freezeMoney === true;
 }
 
 function getEffectiveActionConfigForPlayer(player, action) {
@@ -477,6 +486,26 @@ async function adjustMoney(db, discordUserId, amount) {
          "updatedAt" = NOW()
      WHERE "discordUserId" = $2`,
     [amount, discordUserId]
+  );
+
+  return getPlayerByDiscordId(db, discordUserId);
+}
+
+async function setPlayerMoneyExact(db, discordUserId, targetMoney) {
+  const money = Math.max(0, Math.floor(Number(targetMoney) || 0));
+  await db.query(
+    `INSERT INTO players ("discordUserId", money)
+     VALUES ($1, 0)
+     ON CONFLICT ("discordUserId") DO NOTHING`,
+    [discordUserId]
+  );
+
+  await db.query(
+    `UPDATE players
+     SET money = $1,
+         "updatedAt" = NOW()
+     WHERE "discordUserId" = $2`,
+    [money, discordUserId]
   );
 
   return getPlayerByDiscordId(db, discordUserId);
@@ -562,6 +591,15 @@ function getActionMetadata() {
     maxLevel: MAX_LEVEL,
     actions
   };
+}
+
+async function setDevFreezeMoney(db, discordUserId, enabled) {
+  const current = await getPlayerDevConfig(db, discordUserId);
+  const next = {
+    ...current,
+    freezeMoney: enabled === true
+  };
+  return setPlayerDevConfig(db, discordUserId, next);
 }
 
 function getUpgradeCost(action, upgradeKey, currentLevel) {
@@ -664,6 +702,7 @@ function buildAchievementProgress(player) {
 
 async function grantPendingAchievements(client, player) {
   const state = sanitizeAchievementState(player?.achievementState || {});
+  const freezeMoney = isMoneyFrozen(player);
   const grantedByChain = {};
   let totalGranted = 0;
   let changed = false;
@@ -679,7 +718,7 @@ async function grantPendingAchievements(client, player) {
     while (nextClaimedCount < unlocked) {
       const reward = Number(chain.rewards[nextClaimedCount] || 0);
       if (reward > 0) {
-        totalGranted += reward;
+        totalGranted += freezeMoney ? 0 : reward;
         grantedByChain[chain.key] = (grantedByChain[chain.key] || 0) + reward;
       }
       nextClaimedCount += 1;
@@ -850,10 +889,11 @@ async function performAction(db, discordUserId, action, options = {}) {
       `${PLAYER_SELECT_SQL} FOR UPDATE`,
       [discordUserId]
     );
-    const playerBefore = currentPlayerResult.rows[0];
+    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
     const actionConfig = getEffectiveActionConfigForPlayer(playerBefore, action);
     const upgrades = sanitizeUpgrades(playerBefore.upgrades || {});
     const upgradeEffects = getUpgradeEffects(upgrades, action);
+    const freezeMoney = isMoneyFrozen(playerBefore);
 
     const now = Date.now();
     const cooldownUntil = Number(playerBefore[actionConfig.cooldownColumn]) || 0;
@@ -907,6 +947,7 @@ async function performAction(db, discordUserId, action, options = {}) {
     const baseReward = Math.round(baseRewardRaw * effectiveCashMultiplier);
     const bonusCoins = Math.round(bonusCoinsRaw * effectiveCashMultiplier);
     const totalRewardCoins = baseReward + bonusCoins + levelRewardTotal;
+    const appliedRewardCoins = freezeMoney ? 0 : totalRewardCoins;
     const digTrophyGain = bonusTier.itemKey === "dig_trophy" ? 1 : 0;
     const fishTrophyGain = bonusTier.itemKey === "fish_trophy" ? 1 : 0;
     const huntTrophyGain = bonusTier.itemKey === "hunt_trophy" ? 1 : 0;
@@ -938,11 +979,11 @@ async function performAction(db, discordUserId, action, options = {}) {
            "updatedAt" = NOW()
        WHERE "discordUserId" = $13`,
       [
-        totalRewardCoins,
+        appliedRewardCoins,
         nextXp,
         xpGained,
         nextLevel,
-        totalRewardCoins,
+        appliedRewardCoins,
         digTrophyGain,
         fishTrophyGain,
         huntTrophyGain,
@@ -990,19 +1031,49 @@ async function performAction(db, discordUserId, action, options = {}) {
 
 async function setPlayerTimezone(db, discordUserId, timezone) {
   const safeTz = safeTimeZone(timezone);
-  await db.query(
-    `INSERT INTO players ("discordUserId", money, timezone, upgrades, "achievementState")
-     VALUES ($1, 0, $2, $3::jsonb, $4::jsonb)
-     ON CONFLICT ("discordUserId")
-     DO UPDATE SET timezone = $2, "updatedAt" = NOW()`,
-    [
-      discordUserId,
-      safeTz,
-      JSON.stringify(DEFAULT_UPGRADES),
-      JSON.stringify({})
-    ]
-  );
-  return getPlayerByDiscordId(db, discordUserId);
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO players ("discordUserId", money, timezone, upgrades, "achievementState")
+       VALUES ($1, 0, $2, $3::jsonb, $4::jsonb)
+       ON CONFLICT ("discordUserId") DO NOTHING`,
+      [
+        discordUserId,
+        safeTz,
+        JSON.stringify(DEFAULT_UPGRADES),
+        JSON.stringify({})
+      ]
+    );
+
+    const player = await getPlayerByDiscordId(client, discordUserId, client);
+    if (player?.timezone && player.timezone !== safeTz) {
+      throw new Error("Timezone already set and cannot be changed");
+    }
+
+    if (!player?.timezone) {
+      await client.query(
+        `UPDATE players
+         SET timezone = $1,
+             "updatedAt" = NOW()
+         WHERE "discordUserId" = $2`,
+        [safeTz, discordUserId]
+      );
+    }
+
+    const updated = await getPlayerByDiscordId(client, discordUserId, client);
+    await client.query("COMMIT");
+    return updated;
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (_err) {
+      // ignore
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 async function getDailySummary(db, discordUserId) {
@@ -1010,7 +1081,8 @@ async function getDailySummary(db, discordUserId) {
   if (!player) return null;
   const now = Date.now();
   return {
-    timezone: safeTimeZone(player.timezone || "UTC"),
+    timezone: player.timezone || null,
+    timezoneConfigured: Boolean(player.timezone),
     now,
     ...buildDailyState(player, now)
   };
@@ -1033,6 +1105,15 @@ async function claimDailyReward(db, discordUserId) {
     );
     const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
     const now = Date.now();
+    if (!playerBefore?.timezone) {
+      await client.query("COMMIT");
+      return {
+        ok: false,
+        reason: "Set timezone before claiming daily rewards",
+        state: buildDailyState(playerBefore, now),
+        player: playerBefore
+      };
+    }
     const dailyState = buildDailyState(playerBefore, now);
     if (!dailyState.daily.ready) {
       await client.query("COMMIT");
@@ -1052,6 +1133,7 @@ async function claimDailyReward(db, discordUserId) {
     const rewardCoins = Math.floor(
       DAILY_BASE_REWARD * (1 + getStreakBonusPct(nextStreak) / 100)
     );
+    const appliedRewardCoins = isMoneyFrozen(playerBefore) ? 0 : rewardCoins;
 
     await client.query(
       `UPDATE players
@@ -1061,7 +1143,7 @@ async function claimDailyReward(db, discordUserId) {
            "dailyStreak" = $3,
            "updatedAt" = NOW()
        WHERE "discordUserId" = $4`,
-      [rewardCoins, dailyState.currentDay, nextStreak, discordUserId]
+      [appliedRewardCoins, dailyState.currentDay, nextStreak, discordUserId]
     );
 
     const playerAfterDaily = await getPlayerByDiscordId(client, discordUserId, client);
@@ -1069,7 +1151,7 @@ async function claimDailyReward(db, discordUserId) {
     await client.query("COMMIT");
     return {
       ok: true,
-      rewardCoins,
+      rewardCoins: appliedRewardCoins,
       achievementCoins: achievementGrant.grantedCoins,
       player: achievementGrant.player,
       state: buildDailyState(achievementGrant.player, now)
@@ -1099,6 +1181,15 @@ async function claimDailyChallengeReward(db, discordUserId) {
     );
     const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
     const now = Date.now();
+    if (!playerBefore?.timezone) {
+      await client.query("COMMIT");
+      return {
+        ok: false,
+        reason: "Set timezone before claiming daily rewards",
+        state: buildDailyState(playerBefore, now),
+        player: playerBefore
+      };
+    }
     const dailyState = buildDailyState(playerBefore, now);
     if (!dailyState.challenge.ready) {
       await client.query("COMMIT");
@@ -1118,6 +1209,7 @@ async function claimDailyChallengeReward(db, discordUserId) {
     const rewardCoins = Math.floor(
       DAILY_CHALLENGE_BASE_REWARD * (1 + getStreakBonusPct(nextStreak) / 100)
     );
+    const appliedRewardCoins = isMoneyFrozen(playerBefore) ? 0 : rewardCoins;
 
     await client.query(
       `UPDATE players
@@ -1128,7 +1220,7 @@ async function claimDailyChallengeReward(db, discordUserId) {
            "dailyTaskDay" = $2,
            "updatedAt" = NOW()
        WHERE "discordUserId" = $4`,
-      [rewardCoins, dailyState.currentDay, nextStreak, discordUserId]
+      [appliedRewardCoins, dailyState.currentDay, nextStreak, discordUserId]
     );
 
     const playerAfterClaim = await getPlayerByDiscordId(client, discordUserId, client);
@@ -1136,7 +1228,7 @@ async function claimDailyChallengeReward(db, discordUserId) {
     await client.query("COMMIT");
     return {
       ok: true,
-      rewardCoins,
+      rewardCoins: appliedRewardCoins,
       achievementCoins: achievementGrant.grantedCoins,
       player: achievementGrant.player,
       state: buildDailyState(achievementGrant.player, now)
@@ -1179,8 +1271,10 @@ async function settleGamblingResult(
 
     await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
     const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const freezeMoney = isMoneyFrozen(playerBefore);
+    const appliedCoinDelta = freezeMoney ? 0 : coinDelta;
 
-    if (coinDelta < 0 && Number(playerBefore.money || 0) < Math.abs(coinDelta)) {
+    if (!freezeMoney && coinDelta < 0 && Number(playerBefore.money || 0) < Math.abs(coinDelta)) {
       await client.query("COMMIT");
       return {
         ok: false,
@@ -1196,7 +1290,7 @@ async function settleGamblingResult(
       interactionGain > 0
         ? dailyState.challenge.interactions + interactionGain
         : dailyState.challenge.interactions;
-    const positiveGain = Math.max(0, coinDelta);
+    const positiveGain = Math.max(0, appliedCoinDelta);
 
     await client.query(
       `UPDATE players
@@ -1210,7 +1304,7 @@ async function settleGamblingResult(
            "updatedAt" = NOW()
        WHERE "discordUserId" = $8`,
       [
-        coinDelta,
+        appliedCoinDelta,
         positiveGain,
         interactionGain,
         interactionGain,
@@ -1253,11 +1347,12 @@ async function purchaseUpgrade(db, discordUserId, action, upgradeKey) {
 
     await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
     const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const freezeMoney = isMoneyFrozen(playerBefore);
     const upgrades = sanitizeUpgrades(playerBefore.upgrades || {});
     const currentLevel = upgrades[action][upgradeKey];
     const cost = getUpgradeCost(action, upgradeKey, currentLevel);
 
-    if (Number(playerBefore.money || 0) < cost) {
+    if (!freezeMoney && Number(playerBefore.money || 0) < cost) {
       await client.query("COMMIT");
       return {
         ok: false,
@@ -1274,7 +1369,7 @@ async function purchaseUpgrade(db, discordUserId, action, upgradeKey) {
            upgrades = $2::jsonb,
            "updatedAt" = NOW()
        WHERE "discordUserId" = $3`,
-      [cost, JSON.stringify(upgrades), discordUserId]
+      [freezeMoney ? 0 : cost, JSON.stringify(upgrades), discordUserId]
     );
 
     const playerAfter = await getPlayerByDiscordId(client, discordUserId, client);
@@ -1302,9 +1397,11 @@ module.exports = {
   getPlayerByDiscordId,
   registerPlayer,
   adjustMoney,
+  setPlayerMoneyExact,
   getPlayerDevConfig,
   setPlayerDevConfig,
   resetPlayerDevConfig,
+  setDevFreezeMoney,
   setPlayerLevel,
   lockActionCooldown,
   performAction,

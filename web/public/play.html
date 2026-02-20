@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Player Portal | Actions</title>
-    <link rel="stylesheet" href="./play.css?v=3" />
+    <link rel="stylesheet" href="./play.css?v=4" />
   </head>
   <body>
     <main class="page-layout">
@@ -165,9 +165,8 @@
             <button id="close-daily-button" class="close-profile" type="button">Close</button>
           </div>
           <div class="daily-timezone-row">
-            <label for="daily-timezone-select">Timezone</label>
-            <select id="daily-timezone-select"></select>
-            <button id="save-timezone-button" class="close-profile" type="button">Save</button>
+            <label>Timezone</label>
+            <p id="daily-timezone-display" class="daily-timezone-value">Detecting...</p>
           </div>
           <div class="daily-grid">
             <article class="profile-card">
@@ -218,6 +217,17 @@
               </div>
             </article>
             <article class="profile-card wide">
+              <p class="k">Money Control</p>
+              <div class="dev-row">
+                <input id="dev-money-input" type="number" min="0" step="1" value="0" />
+                <button id="dev-set-money-button" class="close-profile" type="button">Set Money</button>
+                <label class="dev-toggle">
+                  <input id="dev-freeze-money-toggle" type="checkbox" />
+                  Freeze Money
+                </label>
+              </div>
+            </article>
+            <article id="dev-action-tools" class="profile-card wide">
               <p class="k">Reward Trigger</p>
               <div class="dev-row">
                 <select id="dev-trigger-dig-select"></select>
@@ -230,6 +240,31 @@
               <div class="dev-row">
                 <select id="dev-trigger-hunt-select"></select>
                 <button id="dev-trigger-hunt-button" class="close-profile" type="button">Play Hunt</button>
+              </div>
+            </article>
+            <article id="dev-gambling-tools" class="profile-card wide" hidden>
+              <p class="k">Gambling Test</p>
+              <div class="dev-row">
+                <select id="dev-gamble-game-select">
+                  <option value="coinflip">Coinflip</option>
+                  <option value="blackjack">Blackjack</option>
+                  <option value="slots">Slots</option>
+                </select>
+                <select id="dev-gamble-outcome-select">
+                  <option value="win">Force Win</option>
+                  <option value="lose">Force Loss</option>
+                  <option value="push">Push (Blackjack)</option>
+                </select>
+              </div>
+              <div class="dev-row">
+                <input id="dev-gamble-risk-input" type="number" step="1" value="50" />
+                <input id="dev-gamble-reward-input" type="number" step="0.01" value="1" />
+                <button id="dev-apply-gamble-settings-button" class="close-profile" type="button">
+                  Apply Risk/Reward
+                </button>
+                <button id="dev-run-gamble-button" class="close-profile" type="button">
+                  Run Test Round
+                </button>
               </div>
             </article>
           </div>
@@ -379,6 +414,6 @@
         </section>
       </section>
     </main>
-    <script src="./play.js?v=11"></script>
+    <script src="./play.js?v=13"></script>
   </body>
 </html>

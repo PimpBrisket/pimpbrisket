@@ -11,9 +11,11 @@ const {
   getPlayerByDiscordId,
   registerPlayer,
   adjustMoney,
+  setPlayerMoneyExact,
   getPlayerDevConfig,
   setPlayerDevConfig,
   resetPlayerDevConfig,
+  setDevFreezeMoney,
   setPlayerLevel,
   lockActionCooldown,
   performAction,
@@ -297,6 +299,9 @@ function toPublicPlayer(player) {
     },
     achievements: achievementState,
     upgrades,
+    dev: {
+      freezeMoney: Boolean(player.devConfig?.freezeMoney)
+    },
     totalBonusRewards: Number(player.totalBonusRewards || 0),
     totalGamblingWins: Number(player.totalGamblingWins || 0),
     totalGamblingPlays: Number(player.totalGamblingPlays || 0),
@@ -623,6 +628,55 @@ app.get("/players/:discordUserId", async (req, res) => {
   }
 });
 
+app.post("/dev/:discordUserId/money", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+    if (!isDevOwnerId(discordUserId)) {
+      return res.status(403).json({ error: "Dev mode is not available for this user" });
+    }
+
+    const money = Number(req.body?.money);
+    if (!Number.isFinite(money)) {
+      return res.status(400).json({ error: "money must be a number" });
+    }
+
+    const player = await setPlayerMoneyExact(db, discordUserId, money);
+    return res.json({ ok: true, player: toPublicPlayer(player) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/dev/:discordUserId/freeze-money", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+    if (!isDevOwnerId(discordUserId)) {
+      return res.status(403).json({ error: "Dev mode is not available for this user" });
+    }
+
+    const enabled = req.body?.enabled === true;
+    const config = await setDevFreezeMoney(db, discordUserId, enabled);
+    const player = await getPlayerByDiscordId(db, discordUserId);
+    return res.json({
+      ok: true,
+      config,
+      player: toPublicPlayer(player)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.put("/players/:discordUserId/timezone", async (req, res) => {
   try {
     const discordUserId = req.params.discordUserId;
@@ -639,6 +693,9 @@ app.put("/players/:discordUserId/timezone", async (req, res) => {
     const player = await setPlayerTimezone(db, discordUserId, timezone);
     return res.json({ ok: true, player: toPublicPlayer(player) });
   } catch (err) {
+    if (typeof err.message === "string" && err.message.includes("Timezone already set")) {
+      return res.status(409).json({ error: err.message });
+    }
     return res.status(500).json({ error: err.message });
   }
 });
