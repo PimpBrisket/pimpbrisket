@@ -205,11 +205,12 @@ function setLevelBar(profile) {
   const nextReward = Number(profile.nextLevelRewardCoins || 0);
 
   levelValueEl.textContent = `${level}`;
-  levelRewardEl.textContent = `${nextReward}`;
+  levelRewardEl.textContent = `+${nextReward} coins`;
 
   if (level >= maxLevel || xpToNext <= 0) {
     xpTextEl.textContent = "MAX LEVEL";
     xpFillEl.style.width = "100%";
+    levelRewardEl.textContent = "MAX";
     return;
   }
 
