@@ -12,6 +12,18 @@ const closeProfileButton = document.getElementById("close-profile-button");
 const openTrophiesButton = document.getElementById("open-trophies-button");
 const trophyPanel = document.getElementById("trophy-panel");
 const closeTrophiesButton = document.getElementById("close-trophies-button");
+const openDevModeButton = document.getElementById("open-dev-mode-button");
+const devPanel = document.getElementById("dev-panel");
+const closeDevModeButton = document.getElementById("close-dev-mode-button");
+const devLevelInput = document.getElementById("dev-level-input");
+const devSetLevelButton = document.getElementById("dev-set-level-button");
+const devMaxLevelButton = document.getElementById("dev-max-level-button");
+const devTriggerDigButton = document.getElementById("dev-trigger-dig-button");
+const devTriggerFishButton = document.getElementById("dev-trigger-fish-button");
+const devTriggerHuntButton = document.getElementById("dev-trigger-hunt-button");
+const devConfigJson = document.getElementById("dev-config-json");
+const devSaveConfigButton = document.getElementById("dev-save-config-button");
+const devResetConfigButton = document.getElementById("dev-reset-config-button");
 const userAvatarEl = document.getElementById("user-avatar");
 const profileAvatarEl = document.getElementById("profile-avatar");
 
@@ -126,11 +138,18 @@ let profileSyncTimer = null;
 let currentProfile = null;
 const appBasePath = window.location.pathname.replace(/\/(?:play(?:\.html)?|index\.html)?$/, "");
 const digAnimationImageEl = document.getElementById("anim-dig-image");
+const DEV_OWNER_DISCORD_USER_ID = "931015893377482854";
+let isDevOwner = false;
 
 function resolveAssetUrl(url) {
   if (typeof url !== "string") return url;
   if (url.startsWith("/assets/")) return `${appBasePath}${url}`;
   return url;
+}
+
+function formatActionLabel(action) {
+  if (!action) return "";
+  return action.charAt(0).toUpperCase() + action.slice(1).toLowerCase();
 }
 
 function setDigAnimationVariant(bonusLabel) {
@@ -294,7 +313,7 @@ function renderChanceTable(action) {
   const config = actionMeta.actions[action];
   if (!config) return;
 
-  chanceTitleEl.textContent = `${action.toUpperCase()} Chances`;
+  chanceTitleEl.textContent = `${formatActionLabel(action)} Chances`;
   chanceXpEl.textContent = `XP: ${config.xpMin}-${config.xpMax}`;
 
   renderChanceRows(chanceWinningsEl, config.payoutTiers, (tier) => ({
@@ -327,10 +346,24 @@ async function loadConfig() {
 
 async function loadActionMeta() {
   try {
-    const response = await fetch(`${apiBaseUrl}/meta/actions`);
-    if (!response.ok) return;
-    const payload = await response.json();
-    if (payload && payload.actions) actionMeta = payload;
+    if (isDevOwner && discordUserId) {
+      const response = await fetch(`${apiBaseUrl}/dev/${discordUserId}/config`);
+      if (response.ok) {
+        const payload = await response.json();
+        if (payload?.defaults?.actions) {
+          actionMeta = payload.defaults;
+          if (payload?.config?.actions) {
+            actionMeta.actions = payload.config.actions;
+          }
+          return;
+        }
+      }
+    }
+
+    const fallbackResponse = await fetch(`${apiBaseUrl}/meta/actions`);
+    if (!fallbackResponse.ok) return;
+    const fallbackPayload = await fallbackResponse.json();
+    if (fallbackPayload && fallbackPayload.actions) actionMeta = fallbackPayload;
   } catch (_err) {
     // Use fallback action metadata when endpoint is unavailable.
   }
@@ -366,6 +399,67 @@ async function loadProfile() {
   cooldownUntilByAction.fish = Number(profile.fishCooldownUntil || 0);
   cooldownUntilByAction.hunt = Number(profile.huntCooldownUntil || 0);
   updateButtonsByCooldown();
+}
+
+async function loadDevConfig() {
+  const response = await fetch(`${apiBaseUrl}/dev/${discordUserId}/config`);
+  if (!response.ok) throw new Error("Could not load dev config");
+  const payload = await response.json();
+  if (devConfigJson) {
+    devConfigJson.value = JSON.stringify(payload.config || {}, null, 2);
+  }
+}
+
+async function saveDevConfig() {
+  if (!devConfigJson) return;
+  let parsed;
+  try {
+    parsed = JSON.parse(devConfigJson.value);
+  } catch (_err) {
+    setStatus("Dev config JSON is invalid.", "tone-error");
+    return;
+  }
+  const response = await fetch(`${apiBaseUrl}/dev/${discordUserId}/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ config: parsed })
+  });
+  if (!response.ok) {
+    setStatus("Could not save dev config.", "tone-error");
+    return;
+  }
+  await loadActionMeta();
+  renderChanceTable("dig");
+  setStatus("Dev config saved.", "tone-success");
+}
+
+async function resetDevConfig() {
+  const response = await fetch(`${apiBaseUrl}/dev/${discordUserId}/reset`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" }
+  });
+  if (!response.ok) {
+    setStatus("Could not reset dev config.", "tone-error");
+    return;
+  }
+  await loadDevConfig();
+  await loadActionMeta();
+  renderChanceTable("dig");
+  setStatus("Dev config reverted to defaults.", "tone-success");
+}
+
+async function setDevLevel(level) {
+  const response = await fetch(`${apiBaseUrl}/dev/${discordUserId}/level`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ level })
+  });
+  if (!response.ok) {
+    setStatus("Could not set level.", "tone-error");
+    return;
+  }
+  await loadProfile();
+  setStatus(`Level set to ${Math.floor(level)}.`, "tone-success");
 }
 
 async function playAnimation(action, bonusLabel = "") {
@@ -405,7 +499,7 @@ async function performAction(action) {
   const cooldownRemaining = (cooldownUntilByAction[action] || 0) - now;
   if (cooldownRemaining > 0) {
     setStatus(
-      `${action.toUpperCase()} is cooling down (${formatSeconds(cooldownRemaining)}s).`,
+      `${formatActionLabel(action)} is cooling down (${formatSeconds(cooldownRemaining)}s).`,
       "tone-error"
     );
     return;
@@ -414,7 +508,7 @@ async function performAction(action) {
   actionButtons.forEach((button) => {
     button.disabled = true;
   });
-  setStatus(`${action.toUpperCase()} action started...`);
+  setStatus(`${formatActionLabel(action)} action started...`);
 
   try {
     const apiResponse = await fetch(`${apiBaseUrl}/players/${discordUserId}/actions/${action}`, {
@@ -430,7 +524,7 @@ async function performAction(action) {
         setLevelBar(payload.player);
       }
       setStatus(
-        `${action.toUpperCase()} cooldown: ${formatSeconds(remaining)}s.`,
+        `${formatActionLabel(action)} cooldown: ${formatSeconds(remaining)}s.`,
         "tone-error"
       );
       updateButtonsByCooldown();
@@ -462,7 +556,7 @@ async function performAction(action) {
       );
     } else {
       setStatus(
-        `You earned $${payload.reward} and ${xpGain} XP from ${action.toUpperCase()}.${
+        `You earned $${payload.reward} and ${xpGain} XP from ${formatActionLabel(action)}.${
           bonusItem ? ` Bonus drop: ${payload.rewardBreakdown.bonusLabel}.` : ""
         }`,
         "tone-success"
@@ -531,6 +625,50 @@ function bindUserMenu() {
     trophyPanel.hidden = true;
   });
 
+  if (isDevOwner && openDevModeButton && devPanel && closeDevModeButton) {
+    openDevModeButton.hidden = false;
+    openDevModeButton.addEventListener("click", async () => {
+      devPanel.hidden = false;
+      closeDropdown();
+      try {
+        await loadDevConfig();
+      } catch (_err) {
+        setStatus("Could not load dev mode config.", "tone-error");
+      }
+    });
+
+    closeDevModeButton.addEventListener("click", () => {
+      devPanel.hidden = true;
+    });
+
+    if (devSetLevelButton && devLevelInput) {
+      devSetLevelButton.addEventListener("click", async () => {
+        await setDevLevel(Number(devLevelInput.value || 1));
+      });
+    }
+    if (devMaxLevelButton) {
+      devMaxLevelButton.addEventListener("click", async () => {
+        if (devLevelInput) devLevelInput.value = "100";
+        await setDevLevel(100);
+      });
+    }
+    if (devTriggerDigButton) {
+      devTriggerDigButton.addEventListener("click", () => playAnimation("dig", ""));
+    }
+    if (devTriggerFishButton) {
+      devTriggerFishButton.addEventListener("click", () => playAnimation("fish", ""));
+    }
+    if (devTriggerHuntButton) {
+      devTriggerHuntButton.addEventListener("click", () => playAnimation("hunt", ""));
+    }
+    if (devSaveConfigButton) {
+      devSaveConfigButton.addEventListener("click", saveDevConfig);
+    }
+    if (devResetConfigButton) {
+      devResetConfigButton.addEventListener("click", resetDevConfig);
+    }
+  }
+
   document.addEventListener("click", (event) => {
     const clickTarget = event.target;
     const clickedButton =
@@ -543,8 +681,6 @@ function bindUserMenu() {
 
 async function init() {
   await loadConfig();
-  await loadActionMeta();
-  renderChanceTable("dig");
 
   discordUserId = resolveUserId();
   if (!discordUserId) {
@@ -554,6 +690,10 @@ async function init() {
     });
     return;
   }
+
+  isDevOwner = discordUserId === DEV_OWNER_DISCORD_USER_ID;
+  await loadActionMeta();
+  renderChanceTable("dig");
 
   bindActions();
   bindUserMenu();
