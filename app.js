@@ -2,6 +2,7 @@ const loginButton = document.getElementById("discord-login");
 const result = document.getElementById("result");
 
 let apiBaseUrl = "https://pimpbrisket.onrender.com";
+const appBasePath = window.location.pathname.replace(/\/(?:index\.html)?$/, "");
 
 function showResult(message) {
   if (!result) return;
@@ -11,6 +12,10 @@ function showResult(message) {
 function setLoginHref() {
   if (!loginButton) return;
   loginButton.href = `${apiBaseUrl}/auth/discord/login`;
+}
+
+function isLikelyDiscordId(value) {
+  return typeof value === "string" && /^\d{17,20}$/.test(value);
 }
 
 async function readJsonSafely(response) {
@@ -48,6 +53,38 @@ function handleAuthError() {
   showResult(reason);
 }
 
+async function canAutoLoginWithRememberedDevice() {
+  const rememberedId = localStorage.getItem("discordUserId");
+  if (!isLikelyDiscordId(rememberedId)) return false;
+
+  showResult("Checking remembered device...");
+  try {
+    const response = await fetch(`${apiBaseUrl}/players/${rememberedId}`);
+    if (!response.ok) {
+      localStorage.removeItem("discordUserId");
+      return false;
+    }
+    return true;
+  } catch (_err) {
+    return false;
+  }
+}
+
+function bindLoginButton() {
+  if (!loginButton) return;
+  loginButton.addEventListener("click", async (event) => {
+    event.preventDefault();
+    const canSkipDiscordLogin = await canAutoLoginWithRememberedDevice();
+    if (canSkipDiscordLogin) {
+      showResult("Welcome back. Opening your account...");
+      window.location.href = `${appBasePath}/play`;
+      return;
+    }
+    showResult("Redirecting to Discord sign in...");
+    window.location.href = loginButton.href;
+  });
+}
+
 async function init() {
   setLoginHref();
   if (!window.location.hostname.includes("github.io")) {
@@ -55,6 +92,7 @@ async function init() {
     setLoginHref();
   }
   handleAuthError();
+  bindLoginButton();
 }
 
 init().catch(() => {
