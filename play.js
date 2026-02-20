@@ -4,6 +4,7 @@ const levelValueEl = document.getElementById("level-value");
 const xpTextEl = document.getElementById("xp-text");
 const xpFillEl = document.getElementById("xp-fill");
 const levelRewardEl = document.getElementById("level-reward");
+const mainTitleEl = document.getElementById("main-title");
 const userMenuButton = document.getElementById("user-menu-button");
 const userDropdown = document.getElementById("user-dropdown");
 const openProfileButton = document.getElementById("open-profile-button");
@@ -49,8 +50,38 @@ const chanceTitleEl = document.getElementById("chance-title");
 const chanceXpEl = document.getElementById("chance-xp");
 const chanceWinningsEl = document.getElementById("chance-winnings");
 const chanceBonusEl = document.getElementById("chance-bonus");
+const shopButton = document.getElementById("shop-button");
+const menuButton = document.getElementById("menu-button");
+const modeMenu = document.getElementById("mode-menu");
+const modeActionsButton = document.getElementById("mode-actions-button");
+const modeGamblingButton = document.getElementById("mode-gambling-button");
+const regularActionsSection = document.getElementById("regular-actions");
+const gamblingActionsSection = document.getElementById("gambling-actions");
+const gamblingPanel = document.getElementById("gambling-panel");
+const actionStageEl = document.getElementById("action-stage");
+const gamblingStatusEl = document.getElementById("gambling-status");
+const gamblingResultTextEl = document.getElementById("gambling-result-text");
+const coinflipControlsEl = document.getElementById("coinflip-controls");
+const blackjackControlsEl = document.getElementById("blackjack-controls");
+const slotsControlsEl = document.getElementById("slots-controls");
+const coinflipHeadsButton = document.getElementById("coinflip-heads-button");
+const coinflipTailsButton = document.getElementById("coinflip-tails-button");
+const blackjackDealButton = document.getElementById("blackjack-deal-button");
+const blackjackHitButton = document.getElementById("blackjack-hit-button");
+const blackjackStandButton = document.getElementById("blackjack-stand-button");
+const slotsSpinButton = document.getElementById("slots-spin-button");
+const riskSliderEl = document.getElementById("risk-slider");
+const riskCurrentEl = document.getElementById("risk-current");
+const riskRewardEl = document.getElementById("risk-reward");
+const betAmountInputEl = document.getElementById("bet-amount-input");
+const betParsedDisplayEl = document.getElementById("bet-parsed-display");
+const gambleGameButtons = Array.from(document.querySelectorAll(".gambling-action-card"));
+const chanceWinningsTableEl = chanceWinningsEl ? chanceWinningsEl.closest("table") : null;
+const chanceBonusTableEl = chanceBonusEl ? chanceBonusEl.closest("table") : null;
+const chanceCoinHeadingEl = chanceWinningsTableEl ? chanceWinningsTableEl.previousElementSibling : null;
+const chanceBonusHeadingEl = chanceBonusTableEl ? chanceBonusTableEl.previousElementSibling : null;
 
-const actionButtons = Array.from(document.querySelectorAll(".action-card"));
+const actionButtons = Array.from(document.querySelectorAll(".action-card[data-action]"));
 const animByAction = {
   dig: document.getElementById("anim-dig"),
   fish: document.getElementById("anim-fish"),
@@ -146,6 +177,17 @@ let isDevModeActive = false;
 let selectedChanceAction = "dig";
 let devSaveTimer = null;
 let digAnimationVersion = 0;
+let currentMode = "actions";
+let selectedGambleGame = "";
+let sessionWalletDelta = 0;
+let blackjackState = {
+  active: false,
+  player: [],
+  dealer: [],
+  bet: 0,
+  risk: 0,
+  rewardMultiplier: 1
+};
 
 async function readJsonSafely(response) {
   const text = await response.text();
@@ -174,6 +216,87 @@ function formatActionLabel(action) {
   return action.charAt(0).toUpperCase() + action.slice(1).toLowerCase();
 }
 
+function formatCoins(value) {
+  return Math.floor(Number(value || 0)).toLocaleString("en-US");
+}
+
+function getBaseWallet() {
+  return Number(currentProfile?.money || 0);
+}
+
+function getDisplayWallet() {
+  return Math.max(0, getBaseWallet() + sessionWalletDelta);
+}
+
+function applyWalletDelta(deltaCoins) {
+  sessionWalletDelta += Math.floor(deltaCoins);
+  setWallet(getDisplayWallet());
+  if (profileWalletEl) {
+    profileWalletEl.textContent = `$${formatCoins(getDisplayWallet())}`;
+  }
+}
+
+function parseBetAmount(rawValue) {
+  if (typeof rawValue !== "string") return NaN;
+  let normalized = rawValue.trim().toLowerCase();
+  if (!normalized) return NaN;
+  normalized = normalized.replace(/\$/g, "").replace(/,/g, "").replace(/_/g, "").replace(/\s+/g, "");
+
+  const match = normalized.match(/^(\d+(?:\.\d+)?)([kmb])?$/i);
+  if (!match) return NaN;
+
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return NaN;
+
+  const suffix = (match[2] || "").toLowerCase();
+  const multiplierBySuffix = { "": 1, k: 1000, m: 1000000, b: 1000000000 };
+  const multiplier = multiplierBySuffix[suffix];
+  const scaled = Math.floor(amount * multiplier);
+  if (!Number.isFinite(scaled) || scaled < 0) return NaN;
+
+  return Math.min(1000000, scaled);
+}
+
+function getRiskPercent() {
+  return Number(riskSliderEl?.value || 0);
+}
+
+function getRiskRewardMultiplier(riskPercent) {
+  return 1 + riskPercent * 0.015;
+}
+
+function updateRiskUi() {
+  const riskPercent = getRiskPercent();
+  const rewardIncreasePct = Math.round((getRiskRewardMultiplier(riskPercent) - 1) * 100);
+  if (riskCurrentEl) riskCurrentEl.textContent = `Current Risk: ${riskPercent}%`;
+  if (riskRewardEl) riskRewardEl.textContent = `Reward Increase: +${rewardIncreasePct}%`;
+}
+
+function updateBetParsedUi() {
+  if (!betParsedDisplayEl || !betAmountInputEl) return;
+  const parsed = parseBetAmount(betAmountInputEl.value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    betParsedDisplayEl.textContent = "Parsed bet: $0 (Max: $1,000,000)";
+    return;
+  }
+  betParsedDisplayEl.textContent = `Parsed bet: $${formatCoins(parsed)} (Max: $1,000,000)`;
+}
+
+function readBetOrSetError() {
+  const parsedBet = parseBetAmount(betAmountInputEl?.value || "");
+  if (!Number.isFinite(parsedBet) || parsedBet <= 0) {
+    setStatus("Enter a valid bet amount first.", "tone-error");
+    if (gamblingStatusEl) gamblingStatusEl.textContent = "Enter a valid bet amount.";
+    return 0;
+  }
+  if (parsedBet > getDisplayWallet()) {
+    setStatus("Not enough coins for that bet.", "tone-error");
+    if (gamblingStatusEl) gamblingStatusEl.textContent = "Insufficient wallet for this bet.";
+    return 0;
+  }
+  return parsedBet;
+}
+
 function setDigAnimationVariant(bonusLabel) {
   if (!digAnimationImageEl) return;
   const isMobile = window.matchMedia("(max-width: 760px)").matches;
@@ -194,7 +317,7 @@ function setStatus(message, tone = "") {
 }
 
 function setWallet(value) {
-  walletEl.textContent = `$${value}`;
+  walletEl.textContent = `$${formatCoins(value)}`;
 }
 
 function setLevelBar(profile) {
@@ -258,11 +381,11 @@ function populateProfilePanel(profile) {
 
   profileNameEl.textContent = profile.discordUsername || "Player Profile";
   profileIdEl.textContent = `Discord ID: ${profile.discordUserId}`;
-  profileWalletEl.textContent = `$${profile.money}`;
+  profileWalletEl.textContent = `$${formatCoins(getDisplayWallet())}`;
   profileLevelEl.textContent = `${profile.level}`;
   profileXpEl.textContent = `${lifetimeXp}`;
   profileCommandsEl.textContent = `${profile.totalCommandsUsed || 0}`;
-  profileEarnedEl.textContent = `$${profile.totalMoneyEarned || 0}`;
+  profileEarnedEl.textContent = `$${formatCoins(profile.totalMoneyEarned || 0)}`;
   profileTrophiesEl.textContent = `${digCount > 0 ? "[X]" : "[ ]"} ${
     fishCount > 0 ? "[X]" : "[ ]"
   } ${huntCount > 0 ? "[X]" : "[ ]"}`;
@@ -488,6 +611,12 @@ function renderDevEditableChanceTable(action) {
 function renderChanceTable(action) {
   const config = actionMeta.actions[action];
   if (!config) return;
+  selectedChanceAction = action;
+
+  if (currentMode !== "actions") {
+    updateChancePanelForMode();
+    return;
+  }
 
   chanceTitleEl.textContent = `${formatActionLabel(action)} Chances`;
   chanceXpEl.textContent = `XP: ${config.xpMin}-${config.xpMax}`;
@@ -572,7 +701,7 @@ async function loadProfile() {
 
   const profile = payload;
   currentProfile = profile;
-  setWallet(profile.money);
+  setWallet(getDisplayWallet());
   setLevelBar(profile);
   setUserAvatar(profile.discordAvatarUrl);
   populateProfilePanel(profile);
@@ -686,8 +815,10 @@ async function performAction(action) {
       const remaining = Number(payload.cooldownRemainingMs || 0);
       cooldownUntilByAction[action] = Number(payload.cooldownUntil || 0);
       if (payload.player) {
-        setWallet(payload.player.money);
+        currentProfile = payload.player;
+        setWallet(getDisplayWallet());
         setLevelBar(payload.player);
+        populateProfilePanel(payload.player);
       }
       setStatus(
         `${formatActionLabel(action)} cooldown: ${formatSeconds(remaining)}s.`,
@@ -705,8 +836,10 @@ async function performAction(action) {
 
     await playAnimation(action, payload.rewardBreakdown?.bonusLabel || "");
 
-    setWallet(payload.player.money);
+    currentProfile = payload.player;
+    setWallet(getDisplayWallet());
     setLevelBar(payload.player);
+    populateProfilePanel(payload.player);
     cooldownUntilByAction[action] = Number(payload.cooldownUntil || 0);
 
     const xpGain = Number(payload.rewardBreakdown?.xpGained || 0);
@@ -735,6 +868,260 @@ async function performAction(action) {
   }
 }
 
+function hideAllGambleControls() {
+  if (coinflipControlsEl) coinflipControlsEl.hidden = true;
+  if (blackjackControlsEl) blackjackControlsEl.hidden = true;
+  if (slotsControlsEl) slotsControlsEl.hidden = true;
+}
+
+function resetBlackjackState() {
+  blackjackState = {
+    active: false,
+    player: [],
+    dealer: [],
+    bet: 0,
+    risk: 0,
+    rewardMultiplier: 1
+  };
+  if (blackjackHitButton) blackjackHitButton.hidden = true;
+  if (blackjackStandButton) blackjackStandButton.hidden = true;
+}
+
+function updateChancePanelForMode() {
+  const showActionChances = currentMode === "actions";
+  if (chanceCoinHeadingEl) chanceCoinHeadingEl.hidden = !showActionChances;
+  if (chanceWinningsTableEl) chanceWinningsTableEl.hidden = !showActionChances;
+  if (chanceBonusHeadingEl) chanceBonusHeadingEl.hidden = !showActionChances;
+  if (chanceBonusTableEl) chanceBonusTableEl.hidden = !showActionChances;
+  if (chanceTitleEl) chanceTitleEl.textContent = showActionChances ? `${formatActionLabel(selectedChanceAction)} Chances` : "Gambling";
+  if (chanceXpEl) {
+    chanceXpEl.textContent = showActionChances
+      ? `XP: ${actionMeta.actions[selectedChanceAction]?.xpMin || 0}-${actionMeta.actions[selectedChanceAction]?.xpMax || 0}`
+      : "Use Menu to switch sections.";
+  }
+}
+
+function setMode(mode) {
+  currentMode = mode === "gambling" ? "gambling" : "actions";
+  const inGambling = currentMode === "gambling";
+  if (mainTitleEl) mainTitleEl.textContent = inGambling ? "Gambling Hall" : "Action Center";
+  if (regularActionsSection) regularActionsSection.hidden = inGambling;
+  if (gamblingActionsSection) gamblingActionsSection.hidden = !inGambling;
+  if (gamblingPanel) gamblingPanel.hidden = !inGambling;
+  if (actionStageEl) actionStageEl.hidden = inGambling;
+  if (!inGambling) {
+    hideAllGambleControls();
+    if (gamblingResultTextEl) gamblingResultTextEl.textContent = "No bet placed yet.";
+    if (gamblingStatusEl) gamblingStatusEl.textContent = "Choose Coinflip, Blackjack, or Slots.";
+    selectedGambleGame = "";
+    resetBlackjackState();
+  }
+  updateChancePanelForMode();
+}
+
+function setActiveGambleGame(game) {
+  selectedGambleGame = game;
+  hideAllGambleControls();
+  resetBlackjackState();
+  if (gamblingResultTextEl) gamblingResultTextEl.textContent = "No bet placed yet.";
+  if (game === "coinflip" && coinflipControlsEl) {
+    coinflipControlsEl.hidden = false;
+    if (gamblingStatusEl) gamblingStatusEl.textContent = "Coinflip active. Choose Heads or Tails.";
+  } else if (game === "blackjack" && blackjackControlsEl) {
+    blackjackControlsEl.hidden = false;
+    if (gamblingStatusEl) gamblingStatusEl.textContent = "Blackjack active. Press Deal to start a hand.";
+  } else if (game === "slots" && slotsControlsEl) {
+    slotsControlsEl.hidden = false;
+    if (gamblingStatusEl) gamblingStatusEl.textContent = "Slots active. Press Spin.";
+  }
+}
+
+function drawCard() {
+  const ranks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+  return ranks[Math.floor(Math.random() * ranks.length)];
+}
+
+function handValue(hand) {
+  let total = 0;
+  let aceCount = 0;
+  hand.forEach((card) => {
+    if (card === "A") {
+      aceCount += 1;
+      total += 11;
+      return;
+    }
+    if (card === "K" || card === "Q" || card === "J") {
+      total += 10;
+      return;
+    }
+    total += Number(card);
+  });
+  while (total > 21 && aceCount > 0) {
+    total -= 10;
+    aceCount -= 1;
+  }
+  return total;
+}
+
+function resolveCoinflip(call) {
+  const bet = readBetOrSetError();
+  if (!bet) return;
+
+  const risk = getRiskPercent();
+  const rewardMultiplier = getRiskRewardMultiplier(risk);
+  const winChance = Math.max(0.2, 0.5 - risk * 0.0015);
+  const opposite = call === "heads" ? "tails" : "heads";
+  const coin = Math.random() < winChance ? call : opposite;
+  const didWin = coin === call;
+
+  if (didWin) {
+    const profit = Math.floor(bet * 0.95 * rewardMultiplier);
+    applyWalletDelta(profit);
+    if (gamblingResultTextEl) {
+      gamblingResultTextEl.textContent = `Coin landed ${coin}. You won $${formatCoins(profit)}.`;
+    }
+    setStatus(`Coinflip win: +$${formatCoins(profit)}.`, "tone-success");
+  } else {
+    applyWalletDelta(-bet);
+    if (gamblingResultTextEl) {
+      gamblingResultTextEl.textContent = `Coin landed ${coin}. You lost $${formatCoins(bet)}.`;
+    }
+    setStatus(`Coinflip loss: -$${formatCoins(bet)}.`, "tone-error");
+  }
+}
+
+function startBlackjackHand() {
+  const bet = readBetOrSetError();
+  if (!bet) return;
+  const risk = getRiskPercent();
+  const rewardMultiplier = getRiskRewardMultiplier(risk);
+
+  blackjackState.active = true;
+  blackjackState.bet = bet;
+  blackjackState.risk = risk;
+  blackjackState.rewardMultiplier = rewardMultiplier;
+  blackjackState.player = [drawCard(), drawCard()];
+  blackjackState.dealer = [drawCard(), drawCard()];
+  applyWalletDelta(-bet);
+
+  if (blackjackHitButton) blackjackHitButton.hidden = false;
+  if (blackjackStandButton) blackjackStandButton.hidden = false;
+  const playerTotal = handValue(blackjackState.player);
+  if (gamblingResultTextEl) {
+    gamblingResultTextEl.textContent = `Player: ${blackjackState.player.join(", ")} (${playerTotal}) | Dealer: ${blackjackState.dealer[0]}, ?`;
+  }
+
+  if (playerTotal === 21) {
+    finishBlackjack("blackjack");
+  } else {
+    setStatus("Blackjack hand started.", "tone-success");
+  }
+}
+
+function finishBlackjack(reason) {
+  if (!blackjackState.active) return;
+  const playerTotal = handValue(blackjackState.player);
+  let dealerTotal = handValue(blackjackState.dealer);
+
+  if (reason !== "bust" && reason !== "blackjack") {
+    while (dealerTotal < 17) {
+      blackjackState.dealer.push(drawCard());
+      dealerTotal = handValue(blackjackState.dealer);
+    }
+  }
+
+  let result = "lose";
+  if (reason === "bust") {
+    result = "lose";
+  } else if (reason === "blackjack") {
+    result = "blackjack";
+  } else if (dealerTotal > 21 || playerTotal > dealerTotal) {
+    result = "win";
+  } else if (playerTotal === dealerTotal) {
+    result = "push";
+  }
+
+  let change = 0;
+  if (result === "blackjack") {
+    const profit = Math.floor(blackjackState.bet * 1.5 * blackjackState.rewardMultiplier);
+    change = blackjackState.bet + profit;
+  } else if (result === "win") {
+    const profit = Math.floor(blackjackState.bet * 0.95 * blackjackState.rewardMultiplier);
+    change = blackjackState.bet + profit;
+  } else if (result === "push") {
+    change = blackjackState.bet;
+  }
+  applyWalletDelta(change);
+
+  const summary = `Player ${blackjackState.player.join(", ")} (${playerTotal}) | Dealer ${blackjackState.dealer.join(", ")} (${dealerTotal})`;
+  if (gamblingResultTextEl) {
+    if (result === "blackjack") {
+      gamblingResultTextEl.textContent = `${summary}. Blackjack! You won $${formatCoins(change - blackjackState.bet)}.`;
+    } else if (result === "win") {
+      gamblingResultTextEl.textContent = `${summary}. You won $${formatCoins(change - blackjackState.bet)}.`;
+    } else if (result === "push") {
+      gamblingResultTextEl.textContent = `${summary}. Push. Bet returned.`;
+    } else {
+      gamblingResultTextEl.textContent = `${summary}. You lost $${formatCoins(blackjackState.bet)}.`;
+    }
+  }
+
+  if (result === "lose") {
+    setStatus("Blackjack loss.", "tone-error");
+  } else {
+    setStatus("Blackjack resolved.", "tone-success");
+  }
+  resetBlackjackState();
+}
+
+function blackjackHit() {
+  if (!blackjackState.active) return;
+  blackjackState.player.push(drawCard());
+  const total = handValue(blackjackState.player);
+  if (gamblingResultTextEl) {
+    gamblingResultTextEl.textContent = `Player: ${blackjackState.player.join(", ")} (${total}) | Dealer: ${blackjackState.dealer[0]}, ?`;
+  }
+  if (total > 21) {
+    finishBlackjack("bust");
+  }
+}
+
+function spinSlots() {
+  const bet = readBetOrSetError();
+  if (!bet) return;
+
+  const risk = getRiskPercent();
+  const rewardMultiplier = getRiskRewardMultiplier(risk);
+  const symbols = ["Cherry", "Bell", "BAR", "Diamond", "7"];
+  const roll = () => symbols[Math.floor(Math.random() * symbols.length)];
+  const reels = [roll(), roll(), roll()];
+
+  const uniqueCount = new Set(reels).size;
+  let change = -bet;
+  if (uniqueCount === 1) {
+    const jackpotProfit = Math.floor(bet * (2.4 + rewardMultiplier));
+    change = jackpotProfit;
+  } else if (uniqueCount === 2) {
+    const smallProfit = Math.floor(bet * (0.55 + rewardMultiplier * 0.35));
+    change = smallProfit;
+  }
+
+  applyWalletDelta(change);
+  if (gamblingResultTextEl) {
+    const reelText = reels.join(" | ");
+    if (change >= 0) {
+      gamblingResultTextEl.textContent = `${reelText} -> You won $${formatCoins(change)}.`;
+    } else {
+      gamblingResultTextEl.textContent = `${reelText} -> You lost $${formatCoins(Math.abs(change))}.`;
+    }
+  }
+  if (change >= 0) {
+    setStatus(`Slots win: +$${formatCoins(change)}.`, "tone-success");
+  } else {
+    setStatus(`Slots loss: -$${formatCoins(Math.abs(change))}.`, "tone-error");
+  }
+}
+
 function bindActions() {
   actionButtons.forEach((button) => {
     const action = button.dataset.action;
@@ -742,6 +1129,92 @@ function bindActions() {
     button.addEventListener("mouseenter", () => renderChanceTable(action));
     button.addEventListener("focus", () => renderChanceTable(action));
   });
+}
+
+function closeModeMenu() {
+  if (modeMenu) modeMenu.hidden = true;
+}
+
+function bindModeAndGambling() {
+  if (shopButton) {
+    shopButton.addEventListener("click", () => {
+      setStatus("Shop is coming soon.");
+    });
+  }
+
+  if (menuButton && modeMenu) {
+    menuButton.addEventListener("click", () => {
+      modeMenu.hidden = !modeMenu.hidden;
+    });
+  }
+
+  if (modeActionsButton) {
+    modeActionsButton.addEventListener("click", () => {
+      setMode("actions");
+      closeModeMenu();
+      setStatus("Action Center selected.");
+    });
+  }
+
+  if (modeGamblingButton) {
+    modeGamblingButton.addEventListener("click", () => {
+      setMode("gambling");
+      closeModeMenu();
+      setStatus("Gambling section selected.");
+    });
+  }
+
+  gambleGameButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const game = button.dataset.gambleGame;
+      if (game) setActiveGambleGame(game);
+    });
+  });
+
+  if (coinflipHeadsButton) {
+    coinflipHeadsButton.addEventListener("click", () => resolveCoinflip("heads"));
+  }
+
+  if (coinflipTailsButton) {
+    coinflipTailsButton.addEventListener("click", () => resolveCoinflip("tails"));
+  }
+
+  if (blackjackDealButton) {
+    blackjackDealButton.addEventListener("click", startBlackjackHand);
+  }
+
+  if (blackjackHitButton) {
+    blackjackHitButton.addEventListener("click", blackjackHit);
+  }
+
+  if (blackjackStandButton) {
+    blackjackStandButton.addEventListener("click", () => finishBlackjack("stand"));
+  }
+
+  if (slotsSpinButton) {
+    slotsSpinButton.addEventListener("click", spinSlots);
+  }
+
+  if (riskSliderEl) {
+    riskSliderEl.addEventListener("input", updateRiskUi);
+  }
+
+  if (betAmountInputEl) {
+    betAmountInputEl.addEventListener("input", updateBetParsedUi);
+    betAmountInputEl.addEventListener("blur", updateBetParsedUi);
+  }
+
+  document.addEventListener("click", (event) => {
+    const clickTarget = event.target;
+    if (!(clickTarget instanceof Element)) return;
+    const clickedMenuButton = !!(menuButton && menuButton.contains(clickTarget));
+    if (!modeMenu?.hidden && !modeMenu.contains(clickTarget) && !clickedMenuButton) {
+      closeModeMenu();
+    }
+  });
+
+  updateRiskUi();
+  updateBetParsedUi();
 }
 
 function closeDropdown() {
@@ -874,7 +1347,9 @@ async function init() {
   renderChanceTable("dig");
 
   bindActions();
+  bindModeAndGambling();
   bindUserMenu();
+  setMode("actions");
   startCooldownTicker();
   startProfileSync();
   await loadProfile();

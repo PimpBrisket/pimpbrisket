@@ -136,6 +136,57 @@ body {
   margin-top: 12px;
 }
 
+.loot-nav {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.loot-nav-button {
+  border: 1px solid #4d6483;
+  background: linear-gradient(160deg, #11203a, #152746);
+  color: #eff5ff;
+  border-radius: 10px;
+  padding: 9px 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.loot-nav-button:hover {
+  border-color: #6781a4;
+}
+
+.mode-menu {
+  margin-top: 10px;
+  border: 1px solid rgba(129, 149, 175, 0.35);
+  border-radius: 10px;
+  background: rgba(12, 23, 40, 0.8);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.mode-menu-label {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #d2e0f4;
+}
+
+.mode-menu-option {
+  border: 1px solid #4d6483;
+  background: #1b2d49;
+  color: #eff5ff;
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mode-menu-option:hover {
+  background: #253d5f;
+}
+
 .level-row {
   display: grid;
   grid-template-columns: 90px 1fr 140px;
@@ -453,6 +504,11 @@ body {
   height: 72px;
 }
 
+.gambling-action-card {
+  min-height: 88px;
+  place-items: center;
+}
+
 .stage-wrap {
   min-height: 196px;
   padding: 0;
@@ -513,6 +569,122 @@ body {
 
 .tone-error {
   color: var(--err) !important;
+}
+
+.gambling-panel {
+  padding: 12px;
+}
+
+.gambling-grid {
+  display: grid;
+  grid-template-columns: 1fr 290px;
+  gap: 12px;
+}
+
+.gambling-main {
+  border: 1px solid rgba(129, 149, 175, 0.35);
+  border-radius: 10px;
+  background: rgba(12, 23, 40, 0.8);
+  padding: 12px;
+}
+
+.gambling-main h2 {
+  margin: 0 0 6px;
+  font-size: 1.12rem;
+}
+
+#gambling-status {
+  margin: 0 0 10px;
+}
+
+.game-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.gambling-result {
+  margin-top: 6px;
+  border: 1px solid rgba(129, 149, 175, 0.35);
+  border-radius: 10px;
+  background: rgba(10, 20, 35, 0.85);
+  padding: 10px;
+}
+
+.gambling-result .k {
+  margin: 0;
+  color: #98afcc;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.gambling-result .v {
+  margin: 6px 0 0;
+  color: #f1f6ff;
+  font-weight: 700;
+}
+
+.risk-sidebar {
+  border: 1px solid rgba(129, 149, 175, 0.35);
+  border-radius: 10px;
+  background: rgba(12, 23, 40, 0.8);
+  padding: 12px;
+}
+
+.risk-sidebar h3 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
+.bet-input-wrap label,
+.risk-slider-wrap label {
+  display: block;
+  margin-bottom: 6px;
+  color: #d8e1f0;
+  font-size: 0.85rem;
+}
+
+#bet-amount-input {
+  width: 100%;
+  border: 1px solid #4d6483;
+  border-radius: 8px;
+  background: #0f1d33;
+  color: #e5eefb;
+  padding: 8px 10px;
+}
+
+#bet-parsed-display {
+  margin: 6px 0 10px;
+  font-size: 0.8rem;
+}
+
+#risk-slider {
+  width: 100%;
+}
+
+.risk-marks {
+  display: flex;
+  justify-content: space-between;
+  color: #9fb3ce;
+  font-size: 0.75rem;
+  margin-top: 4px;
+}
+
+.risk-current,
+.risk-reward {
+  margin: 7px 0 0;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.risk-current {
+  color: #fcd34d;
+}
+
+.risk-reward {
+  color: #86efac;
 }
 
 /* Dig animation */
@@ -955,6 +1127,10 @@ body {
   }
 
   .trophy-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gambling-grid {
     grid-template-columns: 1fr;
   }
 }
