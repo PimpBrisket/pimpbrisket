@@ -17,7 +17,7 @@ const ACTIONS = {
     bonusTiers: [
       { chancePct: 87, coins: 0, label: "No extra drop" },
       { chancePct: 10, coins: 8, label: "Gold Coin" },
-      { chancePct: 2, coins: 20, label: "Rare Relic" },
+      { chancePct: 2, coins: 20, label: "Da Bone" },
       {
         chancePct: 1,
         coins: 0,

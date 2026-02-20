@@ -75,7 +75,7 @@ const FALLBACK_META = {
       bonusTiers: [
         { chancePct: 87, coins: 0, label: "No extra drop", itemKey: null, itemImage: null },
         { chancePct: 10, coins: 8, label: "Gold Coin" },
-        { chancePct: 2, coins: 20, label: "Rare Relic" },
+        { chancePct: 2, coins: 20, label: "Da Bone" },
         {
           chancePct: 1,
           coins: 0,
@@ -159,7 +159,9 @@ function formatActionLabel(action) {
 
 function setDigAnimationVariant(bonusLabel) {
   if (!digAnimationImageEl) return;
-  const assetName = bonusLabel === "Gold Coin" ? "DugDugCoin.png" : "DugDug.png";
+  let assetName = "DugDug.png";
+  if (bonusLabel === "Gold Coin") assetName = "DugDugCoin.png";
+  if (bonusLabel === "Da Bone") assetName = "DugDugBone.png";
   digAnimationImageEl.src = `./assets/${assetName}?v=4`;
 }
 
