@@ -917,7 +917,8 @@ body {
   .scene.dig .scene-gif {
     object-fit: contain;
     object-position: center bottom;
-    transform: scale(1);
+    transform: scale(1.28);
+    transform-origin: center bottom;
   }
 
   .actions {
