@@ -13,8 +13,7 @@ const closeProfileButton = document.getElementById("close-profile-button");
 const openDailyButton = document.getElementById("open-daily-button");
 const dailyPanel = document.getElementById("daily-panel");
 const closeDailyButton = document.getElementById("close-daily-button");
-const dailyTimezoneSelect = document.getElementById("daily-timezone-select");
-const saveTimezoneButton = document.getElementById("save-timezone-button");
+const dailyTimezoneDisplayEl = document.getElementById("daily-timezone-display");
 const dailyRewardStatusEl = document.getElementById("daily-reward-status");
 const dailyRewardDetailEl = document.getElementById("daily-reward-detail");
 const claimDailyButton = document.getElementById("claim-daily-button");
@@ -46,6 +45,17 @@ const devTriggerFishSelect = document.getElementById("dev-trigger-fish-select");
 const devTriggerHuntSelect = document.getElementById("dev-trigger-hunt-select");
 const devResetConfigButton = document.getElementById("dev-reset-config-button");
 const devLootControls = document.getElementById("dev-loot-controls");
+const devMoneyInput = document.getElementById("dev-money-input");
+const devSetMoneyButton = document.getElementById("dev-set-money-button");
+const devFreezeMoneyToggle = document.getElementById("dev-freeze-money-toggle");
+const devActionTools = document.getElementById("dev-action-tools");
+const devGamblingTools = document.getElementById("dev-gambling-tools");
+const devGambleGameSelect = document.getElementById("dev-gamble-game-select");
+const devGambleOutcomeSelect = document.getElementById("dev-gamble-outcome-select");
+const devGambleRiskInput = document.getElementById("dev-gamble-risk-input");
+const devGambleRewardInput = document.getElementById("dev-gamble-reward-input");
+const devApplyGambleSettingsButton = document.getElementById("dev-apply-gamble-settings-button");
+const devRunGambleButton = document.getElementById("dev-run-gamble-button");
 const userAvatarEl = document.getElementById("user-avatar");
 const profileAvatarEl = document.getElementById("profile-avatar");
 
@@ -199,7 +209,6 @@ let digAnimationVersion = 0;
 let currentMode = "actions";
 let selectedGambleGame = "";
 let sessionWalletDelta = 0;
-let availableTimezones = [];
 let blackjackState = {
   active: false,
   player: [],
@@ -253,39 +262,6 @@ function formatPercent(value) {
   return `${Math.round(Number(value || 0))}%`;
 }
 
-function ensureTimezoneOptions() {
-  if (!dailyTimezoneSelect) return;
-  if (availableTimezones.length === 0) {
-    if (typeof Intl.supportedValuesOf === "function") {
-      try {
-        availableTimezones = Intl.supportedValuesOf("timeZone");
-      } catch (_err) {
-        availableTimezones = [];
-      }
-    }
-    if (availableTimezones.length === 0) {
-      availableTimezones = [
-        "UTC",
-        "America/New_York",
-        "America/Chicago",
-        "America/Denver",
-        "America/Los_Angeles",
-        "Europe/London",
-        "Europe/Paris",
-        "Asia/Tokyo"
-      ];
-    }
-  }
-
-  if (dailyTimezoneSelect.options.length > 0) return;
-  availableTimezones.forEach((zone) => {
-    const option = document.createElement("option");
-    option.value = zone;
-    option.textContent = zone;
-    dailyTimezoneSelect.appendChild(option);
-  });
-}
-
 function detectLocalTimezone() {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
@@ -301,6 +277,45 @@ async function fetchApi(path, options = {}) {
     throw new Error(getApiError(payload, "Request failed"));
   }
   return payload;
+}
+
+function getEffectiveRiskForGame() {
+  const rawRisk = Number(devGambleRiskInput?.value || riskSliderEl?.value || 0);
+  return Math.max(0, rawRisk);
+}
+
+function getEffectiveRewardMultiplierForGame() {
+  const raw = Number(devGambleRewardInput?.value || 1);
+  if (!Number.isFinite(raw) || raw <= 0) return 1;
+  return raw;
+}
+
+function refreshDevPanelForMode() {
+  if (!devPanel || devPanel.hidden) return;
+  const inGambling = currentMode === "gambling";
+  setNodeVisible(devActionTools, !inGambling, "block");
+  setNodeVisible(devGamblingTools, inGambling, "block");
+  if (devLootControls) devLootControls.hidden = inGambling;
+}
+
+async function setDevMoneyValue(value) {
+  const payload = await fetchApi(`/dev/${discordUserId}/money`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ money: Math.max(0, Math.floor(Number(value) || 0)) })
+  });
+  applyPlayerSnapshot(payload.player);
+  if (devMoneyInput) devMoneyInput.value = String(Math.floor(Number(payload.player.money || 0)));
+}
+
+async function setDevFreezeMoney(enabled) {
+  const payload = await fetchApi(`/dev/${discordUserId}/freeze-money`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled: enabled === true })
+  });
+  applyPlayerSnapshot(payload.player);
+  if (devFreezeMoneyToggle) devFreezeMoneyToggle.checked = payload.player?.dev?.freezeMoney === true;
 }
 
 function resolveAssetUrl(url) {
@@ -371,9 +386,22 @@ function getRiskRewardMultiplier(riskPercent) {
 
 function updateRiskUi() {
   const riskPercent = getRiskPercent();
-  const rewardIncreasePct = Math.round((getRiskRewardMultiplier(riskPercent) - 1) * 100);
+  const inDevGambling = isDevModeActive && currentMode === "gambling";
+  const effectiveRisk = inDevGambling ? getEffectiveRiskForGame() : riskPercent;
+  const rewardMultiplier = inDevGambling
+    ? getEffectiveRewardMultiplierForGame()
+    : getRiskRewardMultiplier(effectiveRisk);
+  const rewardIncreasePct = Math.round((rewardMultiplier - 1) * 100);
+  const riskLabel = Math.round(effectiveRisk * 10) / 10;
   if (riskCurrentEl) riskCurrentEl.textContent = `Current Risk: ${riskPercent}%`;
-  if (riskRewardEl) riskRewardEl.textContent = `Reward Increase: +${rewardIncreasePct}%`;
+  if (inDevGambling && riskCurrentEl) {
+    riskCurrentEl.textContent = `Current Risk: ${riskLabel}% (Dev Override)`;
+  }
+  if (riskRewardEl) {
+    riskRewardEl.textContent = inDevGambling
+      ? `Reward Increase: +${rewardIncreasePct}% (Dev Override)`
+      : `Reward Increase: +${rewardIncreasePct}%`;
+  }
 }
 
 function updateBetParsedUi() {
@@ -392,6 +420,9 @@ function readBetOrSetError() {
     setStatus("Enter a valid bet amount first.", "tone-error");
     if (gamblingStatusEl) gamblingStatusEl.textContent = "Enter a valid bet amount.";
     return 0;
+  }
+  if (isDevModeActive && currentMode === "gambling") {
+    return parsedBet;
   }
   if (parsedBet > getDisplayWallet()) {
     setStatus("Not enough coins for that bet.", "tone-error");
@@ -422,25 +453,16 @@ function formatResetTime(timestamp) {
 
 async function loadDailySummary() {
   if (!discordUserId) return;
-  ensureTimezoneOptions();
   const summary = await fetchApi(`/players/${discordUserId}/daily`);
-  if (dailyTimezoneSelect) {
-    const preferredTimezone =
-      currentProfile?.timezoneConfigured === false
-        ? detectLocalTimezone() || summary.timezone || "UTC"
-        : summary.timezone || currentProfile?.timezone || "UTC";
-    const timezone = preferredTimezone;
-    if (!Array.from(dailyTimezoneSelect.options).some((option) => option.value === timezone)) {
-      const option = document.createElement("option");
-      option.value = timezone;
-      option.textContent = timezone;
-      dailyTimezoneSelect.appendChild(option);
-    }
-    dailyTimezoneSelect.value = timezone;
+  if (dailyTimezoneDisplayEl) {
+    const timezoneText = summary.timezoneConfigured ? summary.timezone : "Not set";
+    dailyTimezoneDisplayEl.textContent = timezoneText;
   }
 
   if (dailyRewardStatusEl) {
-    dailyRewardStatusEl.textContent = summary.daily.ready
+    dailyRewardStatusEl.textContent = !summary.timezoneConfigured
+      ? "Timezone required before claiming"
+      : summary.daily.ready
       ? `Ready: +$${formatCoins(summary.daily.rewardCoins)}`
       : "Already claimed for today";
   }
@@ -448,10 +470,12 @@ async function loadDailySummary() {
     dailyRewardDetailEl.textContent =
       `Streak: ${summary.daily.streak} | Next claim streak: ${summary.daily.nextStreak} | Boost: +${formatPercent(summary.daily.bonusPct)} | Resets: ${formatResetTime(summary.nextResetAt)}`;
   }
-  if (claimDailyButton) claimDailyButton.disabled = !summary.daily.ready;
+  if (claimDailyButton) claimDailyButton.disabled = !summary.timezoneConfigured || !summary.daily.ready;
 
   if (dailyChallengeStatusEl) {
-    const readyText = summary.challenge.ready
+    const readyText = !summary.timezoneConfigured
+      ? "Timezone required before claiming"
+      : summary.challenge.ready
       ? `Ready: +$${formatCoins(summary.challenge.rewardCoins)}`
       : `${summary.challenge.interactions}/${summary.challenge.requiredInteractions} interactions`;
     dailyChallengeStatusEl.textContent = readyText;
@@ -460,7 +484,9 @@ async function loadDailySummary() {
     dailyChallengeDetailEl.textContent =
       `Streak: ${summary.challenge.streak} | Next claim streak: ${summary.challenge.nextStreak} | Boost: +${formatPercent(summary.challenge.bonusPct)} | Resets: ${formatResetTime(summary.nextResetAt)}`;
   }
-  if (claimDailyChallengeButton) claimDailyChallengeButton.disabled = !summary.challenge.ready;
+  if (claimDailyChallengeButton) {
+    claimDailyChallengeButton.disabled = !summary.timezoneConfigured || !summary.challenge.ready;
+  }
 }
 
 async function ensurePlayerTimezone() {
@@ -765,7 +791,12 @@ function queueDevConfigSave() {
       const response = await fetch(`${apiBaseUrl}/dev/${discordUserId}/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ config: { actions: actionMeta.actions } })
+        body: JSON.stringify({
+          config: {
+            actions: actionMeta.actions,
+            freezeMoney: devFreezeMoneyToggle?.checked === true
+          }
+        })
       });
       if (!response.ok) {
         const payload = await readJsonSafely(response);
@@ -1010,6 +1041,10 @@ async function loadDevConfig() {
       actionMeta.actions = payload.config.actions;
     }
   }
+  if (devFreezeMoneyToggle) {
+    devFreezeMoneyToggle.checked = payload?.config?.freezeMoney === true;
+  }
+  return payload;
 }
 
 async function resetDevConfig() {
@@ -1192,10 +1227,12 @@ function setMode(mode) {
   currentMode = mode === "gambling" ? "gambling" : "actions";
   const inGambling = currentMode === "gambling";
   if (mainTitleEl) mainTitleEl.textContent = inGambling ? "Gambling Hall" : "Action Center";
+  setNodeVisible(openUpgradeButton, !inGambling, "block");
   setNodeVisible(regularActionsSection, !inGambling, "grid");
   setNodeVisible(gamblingActionsSection, inGambling, "grid");
   setNodeVisible(gamblingPanel, inGambling, "block");
   setNodeVisible(actionStageEl, !inGambling, "block");
+  if (inGambling && upgradePanel) upgradePanel.hidden = true;
   if (!inGambling) {
     hideAllGambleControls();
     if (gamblingResultTextEl) gamblingResultTextEl.textContent = "No bet placed yet.";
@@ -1204,6 +1241,8 @@ function setMode(mode) {
     resetBlackjackState();
   }
   updateChancePanelForMode();
+  refreshDevPanelForMode();
+  updateRiskUi();
 }
 
 function setActiveGambleGame(game) {
@@ -1222,6 +1261,16 @@ function setActiveGambleGame(game) {
     setNodeVisible(slotsPayoutsEl, true, "block");
     if (gamblingStatusEl) gamblingStatusEl.textContent = "Slots active. Press Spin.";
   }
+}
+
+function getRuntimeRiskAndReward() {
+  const baseRisk = getRiskPercent();
+  const isDevGambling = isDevModeActive && currentMode === "gambling";
+  const risk = isDevGambling ? getEffectiveRiskForGame() : baseRisk;
+  const rewardMultiplier = isDevGambling
+    ? getEffectiveRewardMultiplierForGame()
+    : getRiskRewardMultiplier(risk);
+  return { risk, rewardMultiplier };
 }
 
 function drawCard() {
@@ -1255,8 +1304,7 @@ async function resolveCoinflip(call) {
   const bet = readBetOrSetError();
   if (!bet) return;
 
-  const risk = getRiskPercent();
-  const rewardMultiplier = getRiskRewardMultiplier(risk);
+  const { risk, rewardMultiplier } = getRuntimeRiskAndReward();
   const winChance = Math.max(0.2, 0.5 - risk * 0.0015);
   const opposite = call === "heads" ? "tails" : "heads";
   const coin = Math.random() < winChance ? call : opposite;
@@ -1281,8 +1329,7 @@ async function resolveCoinflip(call) {
 function startBlackjackHand() {
   const bet = readBetOrSetError();
   if (!bet) return;
-  const risk = getRiskPercent();
-  const rewardMultiplier = getRiskRewardMultiplier(risk);
+  const { risk, rewardMultiplier } = getRuntimeRiskAndReward();
 
   blackjackState.active = true;
   blackjackState.bet = bet;
@@ -1385,8 +1432,7 @@ function spinSlots() {
   const bet = readBetOrSetError();
   if (!bet) return;
 
-  const risk = getRiskPercent();
-  const rewardMultiplier = getRiskRewardMultiplier(risk);
+  const { rewardMultiplier } = getRuntimeRiskAndReward();
   const roll = () => SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)];
   const reels = [roll(), roll(), roll()];
 
@@ -1412,6 +1458,63 @@ function spinSlots() {
   } else {
     setStatus(`Slots loss: -$${formatCoins(Math.abs(netDelta))}.`, "tone-error");
   }
+}
+
+async function runDevGambleRound() {
+  if (!isDevModeActive || currentMode !== "gambling") return;
+  const game = devGambleGameSelect?.value || "coinflip";
+  const outcome = devGambleOutcomeSelect?.value || "win";
+  const bet = readBetOrSetError() || 100;
+  const rewardMultiplier = getEffectiveRewardMultiplierForGame();
+
+  await setActiveGambleGame(game);
+
+  if (game === "coinflip") {
+    const profit = Math.floor(bet * 0.95 * rewardMultiplier);
+    const won = outcome !== "lose";
+    const delta = won ? profit : -bet;
+    await settleGamblingRound("coinflip", delta, won);
+    if (gamblingResultTextEl) {
+      gamblingResultTextEl.textContent = won
+        ? `Dev Coinflip Win -> +$${formatCoins(delta)}`
+        : `Dev Coinflip Loss -> -$${formatCoins(Math.abs(delta))}`;
+    }
+    setStatus(`Dev coinflip ${won ? "win" : "loss"} applied.`, won ? "tone-success" : "tone-error");
+    return;
+  }
+
+  if (game === "blackjack") {
+    let delta = -bet;
+    let won = false;
+    if (outcome === "push") {
+      delta = 0;
+    } else if (outcome === "win") {
+      delta = Math.floor(bet * 0.95 * rewardMultiplier);
+      won = true;
+    }
+    await settleGamblingRound("blackjack", delta, won);
+    if (gamblingResultTextEl) {
+      gamblingResultTextEl.textContent =
+        outcome === "push"
+          ? "Dev Blackjack Push -> $0"
+          : won
+            ? `Dev Blackjack Win -> +$${formatCoins(delta)}`
+            : `Dev Blackjack Loss -> -$${formatCoins(Math.abs(delta))}`;
+    }
+    setStatus(`Dev blackjack ${outcome} applied.`, outcome === "lose" ? "tone-error" : "tone-success");
+    return;
+  }
+
+  const combo = SLOT_COMBO_PAYOUTS[0];
+  const won = outcome !== "lose";
+  const delta = won ? Math.floor(bet * combo.baseMultiplier * rewardMultiplier) : -bet;
+  await settleGamblingRound("slots", delta, won);
+  if (gamblingResultTextEl) {
+    gamblingResultTextEl.textContent = won
+      ? `Dev Slots Win (${combo.label}) -> +$${formatCoins(delta)}`
+      : `Dev Slots Loss -> -$${formatCoins(Math.abs(delta))}`;
+  }
+  setStatus(`Dev slots ${won ? "win" : "loss"} applied.`, won ? "tone-success" : "tone-error");
 }
 
 function bindActions() {
@@ -1490,24 +1593,6 @@ function bindModeAndGambling() {
   if (betAmountInputEl) {
     betAmountInputEl.addEventListener("input", updateBetParsedUi);
     betAmountInputEl.addEventListener("blur", updateBetParsedUi);
-  }
-
-  if (saveTimezoneButton && dailyTimezoneSelect) {
-    saveTimezoneButton.addEventListener("click", async () => {
-      const timezone = dailyTimezoneSelect.value;
-      try {
-        const payload = await fetchApi(`/players/${discordUserId}/timezone`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ timezone })
-        });
-        applyPlayerSnapshot(payload.player);
-        await loadDailySummary();
-        setStatus(`Timezone set to ${timezone}.`, "tone-success");
-      } catch (err) {
-        setStatus(err.message || "Could not save timezone.", "tone-error");
-      }
-    });
   }
 
   if (claimDailyButton) {
@@ -1647,14 +1732,22 @@ function bindUserMenu() {
     openDevModeButton.addEventListener("click", async () => {
       devPanel.hidden = false;
       isDevModeActive = true;
-      if (devLootControls) devLootControls.hidden = false;
       closeDropdown();
       try {
         await loadDevConfig();
+        refreshDevPanelForMode();
+        if (devMoneyInput) {
+          devMoneyInput.value = String(Math.floor(Number(currentProfile?.money || 0)));
+        }
         renderChanceTable(selectedChanceAction);
         buildRewardOptions(devTriggerDigSelect, "dig");
         buildRewardOptions(devTriggerFishSelect, "fish");
         buildRewardOptions(devTriggerHuntSelect, "hunt");
+        if (devGambleRiskInput && riskSliderEl) {
+          devGambleRiskInput.value = String(Number(riskSliderEl.value || 0));
+        }
+        if (devGambleRewardInput) devGambleRewardInput.value = "1";
+        updateRiskUi();
       } catch (_err) {
         setStatus("Could not load dev mode config.", "tone-error");
       }
@@ -1665,6 +1758,7 @@ function bindUserMenu() {
       isDevModeActive = false;
       if (devLootControls) devLootControls.hidden = true;
       renderChanceTable(selectedChanceAction);
+      updateRiskUi();
     });
 
     if (devSetLevelButton && devLevelInput) {
@@ -1695,6 +1789,48 @@ function bindUserMenu() {
     }
     if (devResetConfigButton) {
       devResetConfigButton.addEventListener("click", resetDevConfig);
+    }
+    if (devSetMoneyButton && devMoneyInput) {
+      devSetMoneyButton.addEventListener("click", async () => {
+        try {
+          await setDevMoneyValue(devMoneyInput.value);
+          setStatus("Money updated.", "tone-success");
+        } catch (err) {
+          setStatus(err.message || "Could not set money.", "tone-error");
+        }
+      });
+    }
+    if (devFreezeMoneyToggle) {
+      devFreezeMoneyToggle.addEventListener("change", async () => {
+        try {
+          await setDevFreezeMoney(devFreezeMoneyToggle.checked === true);
+          queueDevConfigSave();
+          setStatus(
+            devFreezeMoneyToggle.checked ? "Money frozen." : "Money unfrozen.",
+            "tone-success"
+          );
+        } catch (err) {
+          setStatus(err.message || "Could not change freeze state.", "tone-error");
+        }
+      });
+    }
+    if (devApplyGambleSettingsButton) {
+      devApplyGambleSettingsButton.addEventListener("click", () => {
+        const nextRisk = Math.max(0, Number(devGambleRiskInput?.value || 0));
+        const nextReward = Math.max(0.01, Number(devGambleRewardInput?.value || 1));
+        if (devGambleRiskInput) devGambleRiskInput.value = String(nextRisk);
+        if (devGambleRewardInput) devGambleRewardInput.value = String(nextReward);
+        if (riskSliderEl) riskSliderEl.value = String(Math.max(0, Math.min(99, Math.round(nextRisk))));
+        updateRiskUi();
+        setStatus("Dev risk/reward applied.", "tone-success");
+      });
+    }
+    if (devRunGambleButton) {
+      devRunGambleButton.addEventListener("click", () => {
+        runDevGambleRound().catch((err) => {
+          setStatus(err.message || "Could not run dev gamble round.", "tone-error");
+        });
+      });
     }
   }
 
