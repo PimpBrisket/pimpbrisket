@@ -471,8 +471,12 @@ body {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center 108%;
+  object-position: center bottom;
   display: block;
+}
+
+.scene.dig .scene-gif {
+  object-position: center 108%;
 }
 
 .scene .sky {
@@ -915,9 +919,9 @@ body {
 
 @media (max-width: 760px) {
   .scene.dig .scene-gif {
-    object-fit: contain;
+    object-fit: cover;
     object-position: center bottom;
-    transform: scale(1.28);
+    transform: scale(1.45);
     transform-origin: center bottom;
   }
 
