@@ -159,7 +159,9 @@ function formatActionLabel(action) {
 
 function setDigAnimationVariant(bonusLabel) {
   if (!digAnimationImageEl) return;
-  let assetName = "DugDug.png";
+  let assetName = window.matchMedia("(max-width: 760px)").matches
+    ? "DugDugM.png"
+    : "DugDug.png";
   if (bonusLabel === "Gold Coin") assetName = "DugDugCoin.png";
   if (bonusLabel === "Da Bone") assetName = "DugDugBone.png";
   digAnimationImageEl.src = `./assets/${assetName}?v=4`;
