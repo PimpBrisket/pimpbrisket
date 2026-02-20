@@ -21,9 +21,11 @@ const devMaxLevelButton = document.getElementById("dev-max-level-button");
 const devTriggerDigButton = document.getElementById("dev-trigger-dig-button");
 const devTriggerFishButton = document.getElementById("dev-trigger-fish-button");
 const devTriggerHuntButton = document.getElementById("dev-trigger-hunt-button");
-const devConfigJson = document.getElementById("dev-config-json");
-const devSaveConfigButton = document.getElementById("dev-save-config-button");
+const devTriggerDigSelect = document.getElementById("dev-trigger-dig-select");
+const devTriggerFishSelect = document.getElementById("dev-trigger-fish-select");
+const devTriggerHuntSelect = document.getElementById("dev-trigger-hunt-select");
 const devResetConfigButton = document.getElementById("dev-reset-config-button");
+const devLootControls = document.getElementById("dev-loot-controls");
 const userAvatarEl = document.getElementById("user-avatar");
 const profileAvatarEl = document.getElementById("profile-avatar");
 
@@ -140,6 +142,9 @@ const appBasePath = window.location.pathname.replace(/\/(?:play(?:\.html)?|index
 const digAnimationImageEl = document.getElementById("anim-dig-image");
 const DEV_OWNER_DISCORD_USER_ID = "931015893377482854";
 let isDevOwner = false;
+let isDevModeActive = false;
+let selectedChanceAction = "dig";
+let devSaveTimer = null;
 
 function resolveAssetUrl(url) {
   if (typeof url !== "string") return url;
@@ -309,12 +314,138 @@ function renderChanceRows(tbodyEl, rows, mapFn) {
   });
 }
 
+function queueDevConfigSave() {
+  if (!isDevOwner || !isDevModeActive) return;
+  if (devSaveTimer) clearTimeout(devSaveTimer);
+  devSaveTimer = setTimeout(async () => {
+    const response = await fetch(`${apiBaseUrl}/dev/${discordUserId}/config`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config: { actions: actionMeta.actions } })
+    });
+    if (!response.ok) {
+      setStatus("Could not save dev changes.", "tone-error");
+    }
+  }, 300);
+}
+
+function buildRewardOptions(selectEl, action) {
+  if (!selectEl) return;
+  const config = actionMeta.actions[action];
+  if (!config) return;
+  selectEl.innerHTML = "";
+  const options = [
+    ...config.payoutTiers.map((tier) => tier.label),
+    ...config.bonusTiers.map((tier) => tier.label)
+  ];
+  options.forEach((label) => {
+    const option = document.createElement("option");
+    option.value = label;
+    option.textContent = label;
+    selectEl.appendChild(option);
+  });
+}
+
+function renderDevEditableChanceTable(action) {
+  const config = actionMeta.actions[action];
+  if (!config) return;
+  selectedChanceAction = action;
+  chanceWinningsEl.innerHTML = "";
+  chanceBonusEl.innerHTML = "";
+
+  config.payoutTiers.forEach((tier, index) => {
+    const tr = document.createElement("tr");
+    const leftCell = document.createElement("td");
+    const rightCell = document.createElement("td");
+
+    const minInput = document.createElement("input");
+    minInput.type = "number";
+    minInput.className = "chance-input";
+    minInput.value = String(tier.min);
+    minInput.addEventListener("change", () => {
+      tier.min = Math.max(0, Number(minInput.value || 0));
+      tier.max = Math.max(tier.min, tier.max);
+      queueDevConfigSave();
+      renderDevEditableChanceTable(action);
+    });
+
+    const maxInput = document.createElement("input");
+    maxInput.type = "number";
+    maxInput.className = "chance-input";
+    maxInput.value = String(tier.max);
+    maxInput.addEventListener("change", () => {
+      tier.max = Math.max(tier.min, Number(maxInput.value || tier.min));
+      queueDevConfigSave();
+      renderDevEditableChanceTable(action);
+    });
+
+    const chanceInput = document.createElement("input");
+    chanceInput.type = "number";
+    chanceInput.step = "0.1";
+    chanceInput.className = "chance-input";
+    chanceInput.value = String(tier.chancePct);
+    chanceInput.addEventListener("change", () => {
+      tier.chancePct = Math.max(0, Number(chanceInput.value || 0));
+      queueDevConfigSave();
+    });
+
+    leftCell.textContent = `${tier.label} `;
+    leftCell.appendChild(minInput);
+    leftCell.appendChild(document.createTextNode(" - "));
+    leftCell.appendChild(maxInput);
+    rightCell.appendChild(chanceInput);
+    tr.appendChild(leftCell);
+    tr.appendChild(rightCell);
+    chanceWinningsEl.appendChild(tr);
+  });
+
+  config.bonusTiers.forEach((tier) => {
+    const tr = document.createElement("tr");
+    const leftCell = document.createElement("td");
+    const rightCell = document.createElement("td");
+
+    leftCell.textContent = tier.label;
+    if (tier.coins > 0) {
+      const coinsInput = document.createElement("input");
+      coinsInput.type = "number";
+      coinsInput.className = "chance-input";
+      coinsInput.value = String(tier.coins);
+      coinsInput.addEventListener("change", () => {
+        tier.coins = Math.max(0, Number(coinsInput.value || 0));
+        queueDevConfigSave();
+      });
+      leftCell.appendChild(document.createTextNode(" +$"));
+      leftCell.appendChild(coinsInput);
+    }
+
+    const chanceInput = document.createElement("input");
+    chanceInput.type = "number";
+    chanceInput.step = "0.1";
+    chanceInput.className = "chance-input";
+    chanceInput.value = String(tier.chancePct);
+    chanceInput.addEventListener("change", () => {
+      tier.chancePct = Math.max(0, Number(chanceInput.value || 0));
+      queueDevConfigSave();
+    });
+    rightCell.appendChild(chanceInput);
+
+    tr.appendChild(leftCell);
+    tr.appendChild(rightCell);
+    chanceBonusEl.appendChild(tr);
+  });
+}
+
 function renderChanceTable(action) {
   const config = actionMeta.actions[action];
   if (!config) return;
 
   chanceTitleEl.textContent = `${formatActionLabel(action)} Chances`;
   chanceXpEl.textContent = `XP: ${config.xpMin}-${config.xpMax}`;
+
+  if (isDevOwner && isDevModeActive) {
+    renderDevEditableChanceTable(action);
+    return;
+  }
 
   renderChanceRows(chanceWinningsEl, config.payoutTiers, (tier) => ({
     left: `$${tier.min} - $${tier.max}`,
@@ -405,32 +536,12 @@ async function loadDevConfig() {
   const response = await fetch(`${apiBaseUrl}/dev/${discordUserId}/config`);
   if (!response.ok) throw new Error("Could not load dev config");
   const payload = await response.json();
-  if (devConfigJson) {
-    devConfigJson.value = JSON.stringify(payload.config || {}, null, 2);
+  if (payload?.defaults?.actions) {
+    actionMeta = payload.defaults;
+    if (payload?.config?.actions) {
+      actionMeta.actions = payload.config.actions;
+    }
   }
-}
-
-async function saveDevConfig() {
-  if (!devConfigJson) return;
-  let parsed;
-  try {
-    parsed = JSON.parse(devConfigJson.value);
-  } catch (_err) {
-    setStatus("Dev config JSON is invalid.", "tone-error");
-    return;
-  }
-  const response = await fetch(`${apiBaseUrl}/dev/${discordUserId}/config`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ config: parsed })
-  });
-  if (!response.ok) {
-    setStatus("Could not save dev config.", "tone-error");
-    return;
-  }
-  await loadActionMeta();
-  renderChanceTable("dig");
-  setStatus("Dev config saved.", "tone-success");
 }
 
 async function resetDevConfig() {
@@ -443,8 +554,10 @@ async function resetDevConfig() {
     return;
   }
   await loadDevConfig();
-  await loadActionMeta();
-  renderChanceTable("dig");
+  renderChanceTable(selectedChanceAction);
+  buildRewardOptions(devTriggerDigSelect, "dig");
+  buildRewardOptions(devTriggerFishSelect, "fish");
+  buildRewardOptions(devTriggerHuntSelect, "hunt");
   setStatus("Dev config reverted to defaults.", "tone-success");
 }
 
@@ -629,9 +742,15 @@ function bindUserMenu() {
     openDevModeButton.hidden = false;
     openDevModeButton.addEventListener("click", async () => {
       devPanel.hidden = false;
+      isDevModeActive = true;
+      if (devLootControls) devLootControls.hidden = false;
       closeDropdown();
       try {
         await loadDevConfig();
+        renderChanceTable(selectedChanceAction);
+        buildRewardOptions(devTriggerDigSelect, "dig");
+        buildRewardOptions(devTriggerFishSelect, "fish");
+        buildRewardOptions(devTriggerHuntSelect, "hunt");
       } catch (_err) {
         setStatus("Could not load dev mode config.", "tone-error");
       }
@@ -639,6 +758,9 @@ function bindUserMenu() {
 
     closeDevModeButton.addEventListener("click", () => {
       devPanel.hidden = true;
+      isDevModeActive = false;
+      if (devLootControls) devLootControls.hidden = true;
+      renderChanceTable(selectedChanceAction);
     });
 
     if (devSetLevelButton && devLevelInput) {
@@ -653,16 +775,19 @@ function bindUserMenu() {
       });
     }
     if (devTriggerDigButton) {
-      devTriggerDigButton.addEventListener("click", () => playAnimation("dig", ""));
+      devTriggerDigButton.addEventListener("click", () =>
+        playAnimation("dig", devTriggerDigSelect?.value || "")
+      );
     }
     if (devTriggerFishButton) {
-      devTriggerFishButton.addEventListener("click", () => playAnimation("fish", ""));
+      devTriggerFishButton.addEventListener("click", () =>
+        playAnimation("fish", devTriggerFishSelect?.value || "")
+      );
     }
     if (devTriggerHuntButton) {
-      devTriggerHuntButton.addEventListener("click", () => playAnimation("hunt", ""));
-    }
-    if (devSaveConfigButton) {
-      devSaveConfigButton.addEventListener("click", saveDevConfig);
+      devTriggerHuntButton.addEventListener("click", () =>
+        playAnimation("hunt", devTriggerHuntSelect?.value || "")
+      );
     }
     if (devResetConfigButton) {
       devResetConfigButton.addEventListener("click", resetDevConfig);

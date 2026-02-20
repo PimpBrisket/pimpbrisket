@@ -33,6 +33,12 @@
           </thead>
           <tbody id="chance-bonus"></tbody>
         </table>
+
+        <div id="dev-loot-controls" class="dev-loot-controls" hidden>
+          <button id="dev-reset-config-button" class="close-profile" type="button">
+            Revert to originals
+          </button>
+        </div>
       </aside>
 
       <section class="main-column">
@@ -158,22 +164,18 @@
               </div>
             </article>
             <article class="profile-card wide">
-              <p class="k">Animation Trigger</p>
+              <p class="k">Reward Trigger</p>
               <div class="dev-row">
+                <select id="dev-trigger-dig-select"></select>
                 <button id="dev-trigger-dig-button" class="close-profile" type="button">Play Dig</button>
-                <button id="dev-trigger-fish-button" class="close-profile" type="button">Play Fish</button>
-                <button id="dev-trigger-hunt-button" class="close-profile" type="button">Play Hunt</button>
               </div>
-            </article>
-            <article class="profile-card wide">
-              <p class="k">Action Override Editor</p>
-              <p class="muted">Edit JSON then save. Applies only to your user.</p>
-              <textarea id="dev-config-json" class="dev-textarea"></textarea>
               <div class="dev-row">
-                <button id="dev-save-config-button" class="close-profile" type="button">Save Changes</button>
-                <button id="dev-reset-config-button" class="close-profile" type="button">
-                  Revert to originals
-                </button>
+                <select id="dev-trigger-fish-select"></select>
+                <button id="dev-trigger-fish-button" class="close-profile" type="button">Play Fish</button>
+              </div>
+              <div class="dev-row">
+                <select id="dev-trigger-hunt-select"></select>
+                <button id="dev-trigger-hunt-button" class="close-profile" type="button">Play Hunt</button>
               </div>
             </article>
           </div>
@@ -241,6 +243,6 @@
         </section>
       </section>
     </main>
-    <script src="./play.js?v=3"></script>
+    <script src="./play.js?v=4"></script>
   </body>
 </html>
