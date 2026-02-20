@@ -367,6 +367,19 @@ async function playAnimation(action) {
   Object.values(animByAction).forEach((node) => {
     node.hidden = true;
   });
+  const mediaNodes = target.querySelectorAll("img, video");
+  mediaNodes.forEach((node) => {
+    if (node instanceof HTMLImageElement) {
+      const src = node.src;
+      node.src = "";
+      node.src = src;
+      return;
+    }
+    if (node instanceof HTMLVideoElement) {
+      node.currentTime = 0;
+      node.play().catch(() => {});
+    }
+  });
   target.hidden = false;
   const durationByAction = {
     dig: 1400,
