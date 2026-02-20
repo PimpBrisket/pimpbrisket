@@ -51,7 +51,6 @@ const chanceXpEl = document.getElementById("chance-xp");
 const chanceWinningsEl = document.getElementById("chance-winnings");
 const chanceBonusEl = document.getElementById("chance-bonus");
 const shopButton = document.getElementById("shop-button");
-const menuButton = document.getElementById("menu-button");
 const modeMenu = document.getElementById("mode-menu");
 const modeActionsButton = document.getElementById("mode-actions-button");
 const modeGamblingButton = document.getElementById("mode-gambling-button");
@@ -1131,10 +1130,6 @@ function bindActions() {
   });
 }
 
-function closeModeMenu() {
-  if (modeMenu) modeMenu.hidden = true;
-}
-
 function bindModeAndGambling() {
   if (shopButton) {
     shopButton.addEventListener("click", () => {
@@ -1142,16 +1137,9 @@ function bindModeAndGambling() {
     });
   }
 
-  if (menuButton && modeMenu) {
-    menuButton.addEventListener("click", () => {
-      modeMenu.hidden = !modeMenu.hidden;
-    });
-  }
-
   if (modeActionsButton) {
     modeActionsButton.addEventListener("click", () => {
       setMode("actions");
-      closeModeMenu();
       setStatus("Action Center selected.");
     });
   }
@@ -1159,7 +1147,6 @@ function bindModeAndGambling() {
   if (modeGamblingButton) {
     modeGamblingButton.addEventListener("click", () => {
       setMode("gambling");
-      closeModeMenu();
       setStatus("Gambling section selected.");
     });
   }
@@ -1203,15 +1190,6 @@ function bindModeAndGambling() {
     betAmountInputEl.addEventListener("input", updateBetParsedUi);
     betAmountInputEl.addEventListener("blur", updateBetParsedUi);
   }
-
-  document.addEventListener("click", (event) => {
-    const clickTarget = event.target;
-    if (!(clickTarget instanceof Element)) return;
-    const clickedMenuButton = !!(menuButton && menuButton.contains(clickTarget));
-    if (!modeMenu?.hidden && !modeMenu.contains(clickTarget) && !clickedMenuButton) {
-      closeModeMenu();
-    }
-  });
 
   updateRiskUi();
   updateBetParsedUi();
