@@ -389,6 +389,99 @@ body {
   min-width: 180px;
 }
 
+.daily-timezone-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.daily-timezone-row label {
+  color: #d7e2f2;
+  font-size: 0.86rem;
+}
+
+.daily-timezone-row select {
+  background: #0f1d33;
+  border: 1px solid #4d6483;
+  color: #e5eefb;
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+
+.daily-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.achievements-list {
+  display: grid;
+  gap: 8px;
+}
+
+.achievement-row {
+  border: 1px solid rgba(129, 149, 175, 0.35);
+  border-radius: 10px;
+  background: rgba(12, 23, 40, 0.8);
+  padding: 10px;
+}
+
+.achievement-row-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.achievement-row .name {
+  font-weight: 700;
+}
+
+.achievement-row .reward {
+  color: #86efac;
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.achievement-row .meta {
+  margin-top: 6px;
+  color: #b7c8df;
+  font-size: 0.83rem;
+}
+
+.upgrades-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.upgrade-card {
+  border: 1px solid rgba(129, 149, 175, 0.35);
+  border-radius: 10px;
+  background: rgba(12, 23, 40, 0.8);
+  padding: 10px;
+}
+
+.upgrade-card h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.upgrade-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.upgrade-row .meta {
+  color: #c9d8eb;
+  font-size: 0.8rem;
+}
+
 .dev-textarea {
   width: 100%;
   min-height: 220px;
@@ -1177,6 +1270,14 @@ body {
   }
 
   .gambling-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .daily-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .upgrades-list {
     grid-template-columns: 1fr;
   }
 }

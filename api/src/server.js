@@ -20,7 +20,18 @@ const {
   getActionConfig,
   getActionMetadata,
   xpRequiredForLevel,
-  levelRewardCoins
+  levelRewardCoins,
+  DAILY_CHALLENGE_INTERACTIONS_REQUIRED,
+  buildAchievementProgress,
+  buildDailyState,
+  buildUpgradeSummary,
+  setPlayerTimezone,
+  getDailySummary,
+  claimDailyReward,
+  claimDailyChallengeReward,
+  getAchievementSummary,
+  settleGamblingResult,
+  purchaseUpgrade
 } = require("./database");
 
 function parsePositiveIntEnv(name, fallback) {
@@ -241,6 +252,10 @@ function toPublicPlayer(player) {
   const fishTrophyCount = Number(player.fishTrophyCount || 0);
   const huntTrophyCount = Number(player.huntTrophyCount || 0);
   const totalTrophies = digTrophyCount + fishTrophyCount + huntTrophyCount;
+  const now = Date.now();
+  const dailyState = buildDailyState(player, now);
+  const achievementState = buildAchievementProgress(player);
+  const upgrades = buildUpgradeSummary(player);
 
   return {
     ...player,
@@ -271,6 +286,20 @@ function toPublicPlayer(player) {
       },
       placeholderImage: "/assets/null_trophy.png"
     },
+    timezone: player.timezone || "UTC",
+    timezoneConfigured: Boolean(player.timezone),
+    daily: {
+      now,
+      nextResetAt: dailyState.nextResetAt,
+      interactionsRequired: DAILY_CHALLENGE_INTERACTIONS_REQUIRED,
+      ...dailyState.daily,
+      challenge: dailyState.challenge
+    },
+    achievements: achievementState,
+    upgrades,
+    totalBonusRewards: Number(player.totalBonusRewards || 0),
+    totalGamblingWins: Number(player.totalGamblingWins || 0),
+    totalGamblingPlays: Number(player.totalGamblingPlays || 0),
     discordAvatarUrl: getDiscordAvatarUrl(
       player.discordUserId,
       player.discordAvatarHash
@@ -589,6 +618,214 @@ app.get("/players/:discordUserId", async (req, res) => {
     if (!player) return res.status(404).json({ error: "Player not found" });
 
     return res.json(toPublicPlayer(player));
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/players/:discordUserId/timezone", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    const timezone = req.body?.timezone;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+    if (typeof timezone !== "string" || !timezone.trim()) {
+      return res.status(400).json({ error: "timezone is required" });
+    }
+
+    const player = await setPlayerTimezone(db, discordUserId, timezone);
+    return res.json({ ok: true, player: toPublicPlayer(player) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/players/:discordUserId/daily", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+
+    const summary = await getDailySummary(db, discordUserId);
+    if (!summary) return res.status(404).json({ error: "Player not found" });
+    return res.json(summary);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/players/:discordUserId/daily/claim", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+
+    const result = await claimDailyReward(db, discordUserId);
+    if (!result.ok) {
+      return res.status(409).json({
+        error: result.reason || "Daily reward is not ready",
+        state: result.state,
+        player: toPublicPlayer(result.player)
+      });
+    }
+
+    return res.json({
+      ok: true,
+      rewardCoins: result.rewardCoins,
+      achievementCoins: result.achievementCoins,
+      state: result.state,
+      player: toPublicPlayer(result.player)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/players/:discordUserId/daily/challenge/claim", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+
+    const result = await claimDailyChallengeReward(db, discordUserId);
+    if (!result.ok) {
+      return res.status(409).json({
+        error: result.reason || "Daily challenge is not ready",
+        state: result.state,
+        player: toPublicPlayer(result.player)
+      });
+    }
+
+    return res.json({
+      ok: true,
+      rewardCoins: result.rewardCoins,
+      achievementCoins: result.achievementCoins,
+      state: result.state,
+      player: toPublicPlayer(result.player)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/players/:discordUserId/achievements", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+
+    const summary = await getAchievementSummary(db, discordUserId);
+    if (!summary) return res.status(404).json({ error: "Player not found" });
+    return res.json(summary);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/players/:discordUserId/gambling/settle", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    const game = req.body?.game;
+    const coinDelta = req.body?.coinDelta;
+    const won = req.body?.won === true;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+    if (typeof game !== "string") {
+      return res.status(400).json({ error: "game is required" });
+    }
+    if (!Number.isInteger(coinDelta)) {
+      return res.status(400).json({ error: "coinDelta must be an integer" });
+    }
+
+    const result = await settleGamblingResult(db, discordUserId, {
+      game,
+      coinDelta,
+      won,
+      countInteraction: true
+    });
+
+    if (!result.ok) {
+      return res.status(409).json({
+        error: result.error || "Could not settle gambling result",
+        player: toPublicPlayer(result.player)
+      });
+    }
+
+    return res.json({
+      ok: true,
+      achievementCoins: result.achievementCoins || 0,
+      player: toPublicPlayer(result.player)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/players/:discordUserId/upgrades", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+
+    const player = await getPlayerByDiscordId(db, discordUserId);
+    if (!player) return res.status(404).json({ error: "Player not found" });
+    return res.json({
+      upgrades: buildUpgradeSummary(player),
+      player: toPublicPlayer(player)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/players/:discordUserId/upgrades/:action/:upgradeKey", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    const action = req.params.action;
+    const upgradeKey = req.params.upgradeKey;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+
+    const result = await purchaseUpgrade(db, discordUserId, action, upgradeKey);
+    if (!result.ok) {
+      return res.status(409).json({
+        error: result.error || "Not enough coins",
+        cost: result.cost,
+        player: toPublicPlayer(result.player),
+        upgrades: buildUpgradeSummary(result.player)
+      });
+    }
+
+    return res.json({
+      ok: true,
+      cost: result.cost,
+      upgrades: result.upgrades,
+      player: toPublicPlayer(result.player)
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

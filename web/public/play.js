@@ -10,6 +10,25 @@ const userDropdown = document.getElementById("user-dropdown");
 const openProfileButton = document.getElementById("open-profile-button");
 const profilePanel = document.getElementById("profile-panel");
 const closeProfileButton = document.getElementById("close-profile-button");
+const openDailyButton = document.getElementById("open-daily-button");
+const dailyPanel = document.getElementById("daily-panel");
+const closeDailyButton = document.getElementById("close-daily-button");
+const dailyTimezoneSelect = document.getElementById("daily-timezone-select");
+const saveTimezoneButton = document.getElementById("save-timezone-button");
+const dailyRewardStatusEl = document.getElementById("daily-reward-status");
+const dailyRewardDetailEl = document.getElementById("daily-reward-detail");
+const claimDailyButton = document.getElementById("claim-daily-button");
+const dailyChallengeStatusEl = document.getElementById("daily-challenge-status");
+const dailyChallengeDetailEl = document.getElementById("daily-challenge-detail");
+const claimDailyChallengeButton = document.getElementById("claim-daily-challenge-button");
+const openAchievementsButton = document.getElementById("open-achievements-button");
+const achievementsPanel = document.getElementById("achievements-panel");
+const closeAchievementsButton = document.getElementById("close-achievements-button");
+const achievementsListEl = document.getElementById("achievements-list");
+const openUpgradeButton = document.getElementById("open-upgrade-button");
+const upgradePanel = document.getElementById("upgrade-panel");
+const closeUpgradeButton = document.getElementById("close-upgrade-button");
+const upgradesListEl = document.getElementById("upgrades-list");
 const openTrophiesButton = document.getElementById("open-trophies-button");
 const trophyPanel = document.getElementById("trophy-panel");
 const closeTrophiesButton = document.getElementById("close-trophies-button");
@@ -180,6 +199,7 @@ let digAnimationVersion = 0;
 let currentMode = "actions";
 let selectedGambleGame = "";
 let sessionWalletDelta = 0;
+let availableTimezones = [];
 let blackjackState = {
   active: false,
   player: [],
@@ -227,6 +247,60 @@ function getApiError(payload, fallback) {
   return payload && typeof payload.error === "string" && payload.error.trim()
     ? payload.error
     : fallback;
+}
+
+function formatPercent(value) {
+  return `${Math.round(Number(value || 0))}%`;
+}
+
+function ensureTimezoneOptions() {
+  if (!dailyTimezoneSelect) return;
+  if (availableTimezones.length === 0) {
+    if (typeof Intl.supportedValuesOf === "function") {
+      try {
+        availableTimezones = Intl.supportedValuesOf("timeZone");
+      } catch (_err) {
+        availableTimezones = [];
+      }
+    }
+    if (availableTimezones.length === 0) {
+      availableTimezones = [
+        "UTC",
+        "America/New_York",
+        "America/Chicago",
+        "America/Denver",
+        "America/Los_Angeles",
+        "Europe/London",
+        "Europe/Paris",
+        "Asia/Tokyo"
+      ];
+    }
+  }
+
+  if (dailyTimezoneSelect.options.length > 0) return;
+  availableTimezones.forEach((zone) => {
+    const option = document.createElement("option");
+    option.value = zone;
+    option.textContent = zone;
+    dailyTimezoneSelect.appendChild(option);
+  });
+}
+
+function detectLocalTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch (_err) {
+    return "";
+  }
+}
+
+async function fetchApi(path, options = {}) {
+  const response = await fetch(`${apiBaseUrl}${path}`, options);
+  const payload = await readJsonSafely(response);
+  if (!response.ok) {
+    throw new Error(getApiError(payload, "Request failed"));
+  }
+  return payload;
 }
 
 function resolveAssetUrl(url) {
@@ -325,6 +399,194 @@ function readBetOrSetError() {
     return 0;
   }
   return parsedBet;
+}
+
+function applyPlayerSnapshot(player) {
+  if (!player) return;
+  currentProfile = player;
+  sessionWalletDelta = 0;
+  setWallet(player.money);
+  setLevelBar(player);
+  setUserAvatar(player.discordAvatarUrl);
+  populateProfilePanel(player);
+}
+
+function formatResetTime(timestamp) {
+  const date = new Date(Number(timestamp || 0));
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
+}
+
+async function loadDailySummary() {
+  if (!discordUserId) return;
+  ensureTimezoneOptions();
+  const summary = await fetchApi(`/players/${discordUserId}/daily`);
+  if (dailyTimezoneSelect) {
+    const preferredTimezone =
+      currentProfile?.timezoneConfigured === false
+        ? detectLocalTimezone() || summary.timezone || "UTC"
+        : summary.timezone || currentProfile?.timezone || "UTC";
+    const timezone = preferredTimezone;
+    if (!Array.from(dailyTimezoneSelect.options).some((option) => option.value === timezone)) {
+      const option = document.createElement("option");
+      option.value = timezone;
+      option.textContent = timezone;
+      dailyTimezoneSelect.appendChild(option);
+    }
+    dailyTimezoneSelect.value = timezone;
+  }
+
+  if (dailyRewardStatusEl) {
+    dailyRewardStatusEl.textContent = summary.daily.ready
+      ? `Ready: +$${formatCoins(summary.daily.rewardCoins)}`
+      : "Already claimed for today";
+  }
+  if (dailyRewardDetailEl) {
+    dailyRewardDetailEl.textContent =
+      `Streak: ${summary.daily.streak} | Next claim streak: ${summary.daily.nextStreak} | Boost: +${formatPercent(summary.daily.bonusPct)} | Resets: ${formatResetTime(summary.nextResetAt)}`;
+  }
+  if (claimDailyButton) claimDailyButton.disabled = !summary.daily.ready;
+
+  if (dailyChallengeStatusEl) {
+    const readyText = summary.challenge.ready
+      ? `Ready: +$${formatCoins(summary.challenge.rewardCoins)}`
+      : `${summary.challenge.interactions}/${summary.challenge.requiredInteractions} interactions`;
+    dailyChallengeStatusEl.textContent = readyText;
+  }
+  if (dailyChallengeDetailEl) {
+    dailyChallengeDetailEl.textContent =
+      `Streak: ${summary.challenge.streak} | Next claim streak: ${summary.challenge.nextStreak} | Boost: +${formatPercent(summary.challenge.bonusPct)} | Resets: ${formatResetTime(summary.nextResetAt)}`;
+  }
+  if (claimDailyChallengeButton) claimDailyChallengeButton.disabled = !summary.challenge.ready;
+}
+
+async function ensurePlayerTimezone() {
+  if (!currentProfile || currentProfile.timezoneConfigured) return;
+  const timezone = detectLocalTimezone();
+  if (!timezone) return;
+  try {
+    const payload = await fetchApi(`/players/${discordUserId}/timezone`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timezone })
+    });
+    applyPlayerSnapshot(payload.player);
+  } catch (_err) {
+    // Keep UTC fallback when detection cannot be persisted.
+  }
+}
+
+function renderAchievements(achievementSummary) {
+  if (!achievementsListEl) return;
+  achievementsListEl.innerHTML = "";
+  (achievementSummary?.chains || []).forEach((chain) => {
+    const row = document.createElement("article");
+    row.className = "achievement-row";
+
+    const top = document.createElement("div");
+    top.className = "achievement-row-top";
+    const name = document.createElement("span");
+    name.className = "name";
+    const nextReward = chain.nextReward ? `+$${formatCoins(chain.nextReward)}` : "Completed";
+    name.textContent = chain.label;
+    const reward = document.createElement("span");
+    reward.className = "reward";
+    reward.textContent = nextReward;
+    top.appendChild(name);
+    top.appendChild(reward);
+
+    const meta = document.createElement("p");
+    meta.className = "meta";
+    meta.textContent = `Progress: ${formatCoins(chain.progress)} | Stage: ${chain.currentStage}/${chain.totalStages} | Claimed: ${chain.claimedStages}/${chain.totalStages}`;
+
+    row.appendChild(top);
+    row.appendChild(meta);
+    achievementsListEl.appendChild(row);
+  });
+}
+
+async function loadAchievements() {
+  if (!discordUserId) return;
+  const summary = await fetchApi(`/players/${discordUserId}/achievements`);
+  renderAchievements(summary);
+}
+
+function upgradeActionLabel(action) {
+  return action.charAt(0).toUpperCase() + action.slice(1);
+}
+
+function renderUpgrades(upgradeSummary) {
+  if (!upgradesListEl) return;
+  upgradesListEl.innerHTML = "";
+  const actions = ["dig", "fish", "hunt"];
+  actions.forEach((action) => {
+    const card = document.createElement("article");
+    card.className = "upgrade-card";
+    const title = document.createElement("h3");
+    title.textContent = upgradeActionLabel(action);
+    card.appendChild(title);
+
+    const rows = [
+      { key: "cash", label: "Cash Per Interaction", effect: "+5% per level" },
+      { key: "xp", label: "XP Per Interaction", effect: "+5% per level" },
+      { key: "drop", label: "Drop Chance", effect: "Slightly lowers no-drop chance" }
+    ];
+    rows.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "upgrade-row";
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const level = upgradeSummary?.[action]?.[entry.key]?.level || 0;
+      const cost = upgradeSummary?.[action]?.[entry.key]?.nextCost || 0;
+      meta.textContent = `${entry.label} | Lvl ${level} | ${entry.effect}`;
+      const button = document.createElement("button");
+      button.className = "close-profile";
+      button.type = "button";
+      button.textContent = `Buy $${formatCoins(cost)}`;
+      button.addEventListener("click", async () => {
+        try {
+          button.disabled = true;
+          const payload = await fetchApi(
+            `/players/${discordUserId}/upgrades/${action}/${entry.key}`,
+            { method: "POST", headers: { "Content-Type": "application/json" } }
+          );
+          applyPlayerSnapshot(payload.player);
+          renderUpgrades(payload.upgrades);
+          setStatus(`${upgradeActionLabel(action)} ${entry.label} upgraded.`, "tone-success");
+        } catch (err) {
+          setStatus(err.message || "Upgrade failed.", "tone-error");
+        } finally {
+          button.disabled = false;
+        }
+      });
+      row.appendChild(meta);
+      row.appendChild(button);
+      card.appendChild(row);
+    });
+
+    upgradesListEl.appendChild(card);
+  });
+}
+
+async function loadUpgrades() {
+  if (!discordUserId) return;
+  const payload = await fetchApi(`/players/${discordUserId}/upgrades`);
+  renderUpgrades(payload.upgrades);
+}
+
+async function settleGamblingRound(game, coinDelta, won) {
+  const payload = await fetchApi(`/players/${discordUserId}/gambling/settle`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ game, coinDelta, won })
+  });
+  applyPlayerSnapshot(payload.player);
+  await loadDailySummary().catch(() => {});
+  await loadAchievements().catch(() => {});
+  return payload;
 }
 
 function setDigAnimationVariant(bonusLabel) {
@@ -730,11 +992,7 @@ async function loadProfile() {
   if (!response.ok) throw new Error(getApiError(payload, "Could not load profile"));
 
   const profile = payload;
-  currentProfile = profile;
-  setWallet(getDisplayWallet());
-  setLevelBar(profile);
-  setUserAvatar(profile.discordAvatarUrl);
-  populateProfilePanel(profile);
+  applyPlayerSnapshot(profile);
 
   cooldownUntilByAction.dig = Number(profile.digCooldownUntil || 0);
   cooldownUntilByAction.fish = Number(profile.fishCooldownUntil || 0);
@@ -845,10 +1103,7 @@ async function performAction(action) {
       const remaining = Number(payload.cooldownRemainingMs || 0);
       cooldownUntilByAction[action] = Number(payload.cooldownUntil || 0);
       if (payload.player) {
-        currentProfile = payload.player;
-        setWallet(getDisplayWallet());
-        setLevelBar(payload.player);
-        populateProfilePanel(payload.player);
+        applyPlayerSnapshot(payload.player);
       }
       setStatus(
         `${formatActionLabel(action)} cooldown: ${formatSeconds(remaining)}s.`,
@@ -866,10 +1121,7 @@ async function performAction(action) {
 
     await playAnimation(action, payload.rewardBreakdown?.bonusLabel || "");
 
-    currentProfile = payload.player;
-    setWallet(getDisplayWallet());
-    setLevelBar(payload.player);
-    populateProfilePanel(payload.player);
+    applyPlayerSnapshot(payload.player);
     cooldownUntilByAction[action] = Number(payload.cooldownUntil || 0);
 
     const xpGain = Number(payload.rewardBreakdown?.xpGained || 0);
@@ -891,6 +1143,8 @@ async function performAction(action) {
         "tone-success"
       );
     }
+    await loadDailySummary().catch(() => {});
+    await loadAchievements().catch(() => {});
     updateButtonsByCooldown();
   } catch (err) {
     setStatus(err.message || "Could not reach API.", "tone-error");
@@ -930,7 +1184,7 @@ function updateChancePanelForMode() {
   if (chanceXpEl) {
     chanceXpEl.textContent = showActionChances
       ? `XP: ${actionMeta.actions[selectedChanceAction]?.xpMin || 0}-${actionMeta.actions[selectedChanceAction]?.xpMax || 0}`
-      : "Use Menu to switch sections.";
+      : "Use the selector below to switch sections.";
   }
 }
 
@@ -997,7 +1251,7 @@ function handValue(hand) {
   return total;
 }
 
-function resolveCoinflip(call) {
+async function resolveCoinflip(call) {
   const bet = readBetOrSetError();
   if (!bet) return;
 
@@ -1010,13 +1264,13 @@ function resolveCoinflip(call) {
 
   if (didWin) {
     const profit = Math.floor(bet * 0.95 * rewardMultiplier);
-    applyWalletDelta(profit);
+    await settleGamblingRound("coinflip", profit, true);
     if (gamblingResultTextEl) {
       gamblingResultTextEl.textContent = `Coin landed ${coin}. You won $${formatCoins(profit)}.`;
     }
     setStatus(`Coinflip win: +$${formatCoins(profit)}.`, "tone-success");
   } else {
-    applyWalletDelta(-bet);
+    await settleGamblingRound("coinflip", -bet, false);
     if (gamblingResultTextEl) {
       gamblingResultTextEl.textContent = `Coin landed ${coin}. You lost $${formatCoins(bet)}.`;
     }
@@ -1036,7 +1290,6 @@ function startBlackjackHand() {
   blackjackState.rewardMultiplier = rewardMultiplier;
   blackjackState.player = [drawCard(), drawCard()];
   blackjackState.dealer = [drawCard(), drawCard()];
-  applyWalletDelta(-bet);
 
   if (blackjackHitButton) {
     blackjackHitButton.hidden = false;
@@ -1081,24 +1334,26 @@ function finishBlackjack(reason) {
     result = "push";
   }
 
-  let change = 0;
+  let netDelta = -blackjackState.bet;
   if (result === "blackjack") {
-    const profit = Math.floor(blackjackState.bet * 1.5 * blackjackState.rewardMultiplier);
-    change = blackjackState.bet + profit;
+    netDelta = Math.floor(blackjackState.bet * 1.5 * blackjackState.rewardMultiplier);
   } else if (result === "win") {
-    const profit = Math.floor(blackjackState.bet * 0.95 * blackjackState.rewardMultiplier);
-    change = blackjackState.bet + profit;
+    netDelta = Math.floor(blackjackState.bet * 0.95 * blackjackState.rewardMultiplier);
   } else if (result === "push") {
-    change = blackjackState.bet;
+    netDelta = 0;
   }
-  applyWalletDelta(change);
+
+  settleGamblingRound("blackjack", netDelta, result === "win" || result === "blackjack")
+    .catch((err) => {
+      setStatus(err.message || "Could not settle blackjack result.", "tone-error");
+    });
 
   const summary = `Player ${blackjackState.player.join(", ")} (${playerTotal}) | Dealer ${blackjackState.dealer.join(", ")} (${dealerTotal})`;
   if (gamblingResultTextEl) {
     if (result === "blackjack") {
-      gamblingResultTextEl.textContent = `${summary}. Blackjack! You won $${formatCoins(change - blackjackState.bet)}.`;
+      gamblingResultTextEl.textContent = `${summary}. Blackjack! You won $${formatCoins(netDelta)}.`;
     } else if (result === "win") {
-      gamblingResultTextEl.textContent = `${summary}. You won $${formatCoins(change - blackjackState.bet)}.`;
+      gamblingResultTextEl.textContent = `${summary}. You won $${formatCoins(netDelta)}.`;
     } else if (result === "push") {
       gamblingResultTextEl.textContent = `${summary}. Push. Bet returned.`;
     } else {
@@ -1136,25 +1391,26 @@ function spinSlots() {
   const reels = [roll(), roll(), roll()];
 
   const combo = SLOT_COMBO_PAYOUTS.find((entry) => entry.matches(reels));
-  let change = -bet;
+  let netDelta = -bet;
   if (combo) {
-    const profit = Math.floor(bet * combo.baseMultiplier * rewardMultiplier);
-    change = profit;
+    netDelta = Math.floor(bet * combo.baseMultiplier * rewardMultiplier);
   }
 
-  applyWalletDelta(change);
+  settleGamblingRound("slots", netDelta, !!combo).catch((err) => {
+    setStatus(err.message || "Could not settle slots result.", "tone-error");
+  });
   if (gamblingResultTextEl) {
     const reelText = reels.join(" | ");
-    if (combo && change >= 0) {
-      gamblingResultTextEl.textContent = `${reelText} -> ${combo.label} hit! You won $${formatCoins(change)}.`;
+    if (combo && netDelta >= 0) {
+      gamblingResultTextEl.textContent = `${reelText} -> ${combo.label} hit! You won $${formatCoins(netDelta)}.`;
     } else {
-      gamblingResultTextEl.textContent = `${reelText} -> You lost $${formatCoins(Math.abs(change))}.`;
+      gamblingResultTextEl.textContent = `${reelText} -> You lost $${formatCoins(Math.abs(netDelta))}.`;
     }
   }
-  if (change >= 0) {
-    setStatus(`Slots win: +$${formatCoins(change)}.`, "tone-success");
+  if (netDelta >= 0) {
+    setStatus(`Slots win: +$${formatCoins(netDelta)}.`, "tone-success");
   } else {
-    setStatus(`Slots loss: -$${formatCoins(Math.abs(change))}.`, "tone-error");
+    setStatus(`Slots loss: -$${formatCoins(Math.abs(netDelta))}.`, "tone-error");
   }
 }
 
@@ -1196,11 +1452,19 @@ function bindModeAndGambling() {
   });
 
   if (coinflipHeadsButton) {
-    coinflipHeadsButton.addEventListener("click", () => resolveCoinflip("heads"));
+    coinflipHeadsButton.addEventListener("click", () => {
+      resolveCoinflip("heads").catch((err) => {
+        setStatus(err.message || "Coinflip failed.", "tone-error");
+      });
+    });
   }
 
   if (coinflipTailsButton) {
-    coinflipTailsButton.addEventListener("click", () => resolveCoinflip("tails"));
+    coinflipTailsButton.addEventListener("click", () => {
+      resolveCoinflip("tails").catch((err) => {
+        setStatus(err.message || "Coinflip failed.", "tone-error");
+      });
+    });
   }
 
   if (blackjackDealButton) {
@@ -1226,6 +1490,61 @@ function bindModeAndGambling() {
   if (betAmountInputEl) {
     betAmountInputEl.addEventListener("input", updateBetParsedUi);
     betAmountInputEl.addEventListener("blur", updateBetParsedUi);
+  }
+
+  if (saveTimezoneButton && dailyTimezoneSelect) {
+    saveTimezoneButton.addEventListener("click", async () => {
+      const timezone = dailyTimezoneSelect.value;
+      try {
+        const payload = await fetchApi(`/players/${discordUserId}/timezone`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ timezone })
+        });
+        applyPlayerSnapshot(payload.player);
+        await loadDailySummary();
+        setStatus(`Timezone set to ${timezone}.`, "tone-success");
+      } catch (err) {
+        setStatus(err.message || "Could not save timezone.", "tone-error");
+      }
+    });
+  }
+
+  if (claimDailyButton) {
+    claimDailyButton.addEventListener("click", async () => {
+      try {
+        const payload = await fetchApi(`/players/${discordUserId}/daily/claim`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" }
+        });
+        applyPlayerSnapshot(payload.player);
+        await loadDailySummary();
+        await loadAchievements().catch(() => {});
+        setStatus(`Daily claimed: +$${formatCoins(payload.rewardCoins)}.`, "tone-success");
+      } catch (err) {
+        setStatus(err.message || "Daily claim failed.", "tone-error");
+      }
+    });
+  }
+
+  if (claimDailyChallengeButton) {
+    claimDailyChallengeButton.addEventListener("click", async () => {
+      try {
+        const payload = await fetchApi(`/players/${discordUserId}/daily/challenge/claim`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" }
+        });
+        applyPlayerSnapshot(payload.player);
+        await loadDailySummary();
+        await loadAchievements().catch(() => {});
+        setStatus(
+          `Daily challenge claimed: +$${formatCoins(payload.rewardCoins)}.`,
+          "tone-success"
+        );
+      } catch (err) {
+        setStatus(err.message || "Challenge claim failed.", "tone-error");
+      }
+    });
   }
 
   updateRiskUi();
@@ -1267,6 +1586,50 @@ function bindUserMenu() {
   closeProfileButton.addEventListener("click", () => {
     profilePanel.hidden = true;
   });
+
+  if (openDailyButton && dailyPanel && closeDailyButton) {
+    openDailyButton.addEventListener("click", async () => {
+      dailyPanel.hidden = false;
+      closeDropdown();
+      try {
+        await loadDailySummary();
+      } catch (_err) {
+        setStatus("Could not load daily data.", "tone-error");
+      }
+    });
+    closeDailyButton.addEventListener("click", () => {
+      dailyPanel.hidden = true;
+    });
+  }
+
+  if (openAchievementsButton && achievementsPanel && closeAchievementsButton) {
+    openAchievementsButton.addEventListener("click", async () => {
+      achievementsPanel.hidden = false;
+      closeDropdown();
+      try {
+        await loadAchievements();
+      } catch (_err) {
+        setStatus("Could not load achievements.", "tone-error");
+      }
+    });
+    closeAchievementsButton.addEventListener("click", () => {
+      achievementsPanel.hidden = true;
+    });
+  }
+
+  if (openUpgradeButton && upgradePanel && closeUpgradeButton) {
+    openUpgradeButton.addEventListener("click", async () => {
+      upgradePanel.hidden = false;
+      try {
+        await loadUpgrades();
+      } catch (_err) {
+        setStatus("Could not load upgrades.", "tone-error");
+      }
+    });
+    closeUpgradeButton.addEventListener("click", () => {
+      upgradePanel.hidden = true;
+    });
+  }
 
   openTrophiesButton.addEventListener("click", () => {
     trophyPanel.hidden = false;
@@ -1368,6 +1731,7 @@ async function init() {
   startCooldownTicker();
   startProfileSync();
   await loadProfile();
+  await ensurePlayerTimezone();
   setStatus("Choose Dig, Fish, or Hunt.");
 }
 

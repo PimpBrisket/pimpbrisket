@@ -2,6 +2,84 @@ const { Pool } = require("pg");
 
 const ACTION_COOLDOWN_MS = 5000;
 const MAX_LEVEL = 100;
+const MAX_BET_COINS = 1_000_000;
+const DAILY_BASE_REWARD = 250;
+const DAILY_CHALLENGE_BASE_REWARD = 700;
+const DAILY_CHALLENGE_INTERACTIONS_REQUIRED = 100;
+
+const DEFAULT_UPGRADES = {
+  dig: { cash: 0, xp: 0, drop: 0 },
+  fish: { cash: 0, xp: 0, drop: 0 },
+  hunt: { cash: 0, xp: 0, drop: 0 }
+};
+
+const UPGRADE_KEYS = ["cash", "xp", "drop"];
+
+const ACHIEVEMENT_CHAINS = [
+  {
+    key: "interactions",
+    label: "Interactions",
+    thresholds: [100, 1000, 10000],
+    rewards: [120, 900, 12500],
+    progressValue: (player) => Number(player.totalCommandsUsed || 0)
+  },
+  {
+    key: "level",
+    label: "Reach Level",
+    thresholds: [5, 10, 25, 50, 75, 100],
+    rewards: [180, 320, 950, 2600, 6000, 14000],
+    progressValue: (player) => Number(player.level || 1)
+  },
+  {
+    key: "bonusRewards",
+    label: "Bonus Rewards",
+    thresholds: [100, 200, 500, 1000, 2000, 5000, 10000],
+    rewards: [250, 420, 1200, 2600, 5500, 15000, 35000],
+    progressValue: (player) => Number(player.totalBonusRewards || 0)
+  },
+  {
+    key: "gamblingWins",
+    label: "Gambling Wins",
+    thresholds: [10, 20, 50, 100, 200, 500, 1000],
+    rewards: [220, 420, 1200, 3000, 7000, 18000, 42000],
+    progressValue: (player) => Number(player.totalGamblingWins || 0)
+  },
+  {
+    key: "collectorsGreed",
+    label: "Collector's Greed",
+    thresholds: [1, 5, 10, 15, 20, 50, 100],
+    rewards: [300, 1200, 2600, 4200, 6000, 18000, 50000],
+    progressValue: (player) => Number(player.digTrophyCount || 0)
+  },
+  {
+    key: "midnightOcean",
+    label: "Midnight Ocean",
+    thresholds: [1, 5, 10, 15, 20, 50, 100],
+    rewards: [300, 1200, 2600, 4200, 6000, 18000, 50000],
+    progressValue: (player) => Number(player.fishTrophyCount || 0)
+  },
+  {
+    key: "manyHeads",
+    label: "Many Heads",
+    thresholds: [1, 5, 10, 15, 20, 50, 100],
+    rewards: [300, 1200, 2600, 4200, 6000, 18000, 50000],
+    progressValue: (player) => Number(player.huntTrophyCount || 0)
+  },
+  {
+    key: "completeAchievements",
+    label: "Complete Achievements",
+    thresholds: [1, 5, 10, 15, 20],
+    rewards: [550, 2500, 7000, 15500, 30000],
+    progressValue: (_player, achievementState) => {
+      const cloned = { ...(achievementState || {}) };
+      delete cloned.completeAchievements;
+      return Object.values(cloned).reduce(
+        (sum, chainState) => sum + (chainState?.claimedCount || 0),
+        0
+      );
+    }
+  }
+];
 
 const ACTIONS = {
   dig: {
@@ -93,12 +171,100 @@ const PLAYER_SELECT_SQL = `SELECT
   "huntTrophyCount",
   "discordUsername",
   "discordAvatarHash",
-  "devConfig"
+  "devConfig",
+  timezone,
+  "dailyClaimDay",
+  "dailyStreak",
+  "dailyTaskDay",
+  "dailyTaskInteractions",
+  "dailyTaskClaimDay",
+  "dailyTaskStreak",
+  "totalBonusRewards",
+  "totalGamblingWins",
+  "totalGamblingPlays",
+  "achievementState",
+  upgrades
  FROM players
  WHERE "discordUserId" = $1`;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function safeTimeZone(input) {
+  if (typeof input !== "string" || !input.trim()) return "UTC";
+  const trimmed = input.trim();
+  try {
+    // eslint-disable-next-line no-new
+    new Intl.DateTimeFormat("en-US", { timeZone: trimmed });
+    return trimmed;
+  } catch (_err) {
+    return "UTC";
+  }
+}
+
+function getDayKey(timestampMs, timeZone) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: safeTimeZone(timeZone),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
+  const parts = formatter.formatToParts(new Date(timestampMs));
+  const year = parts.find((part) => part.type === "year")?.value || "1970";
+  const month = parts.find((part) => part.type === "month")?.value || "01";
+  const day = parts.find((part) => part.type === "day")?.value || "01";
+  return `${year}-${month}-${day}`;
+}
+
+function getNextMidnightUtcMs(timestampMs, timeZone) {
+  const tz = safeTimeZone(timeZone);
+  const startKey = getDayKey(timestampMs, tz);
+  let probe = timestampMs + 60 * 1000;
+  for (let i = 0; i < 48 * 60; i += 1) {
+    if (getDayKey(probe, tz) !== startKey) return probe;
+    probe += 60 * 1000;
+  }
+  return timestampMs + 24 * 60 * 60 * 1000;
+}
+
+function previousDayKey(currentDayKey, timeZone) {
+  const midnight = Date.parse(`${currentDayKey}T00:00:00.000Z`);
+  return getDayKey(midnight - 12 * 60 * 60 * 1000, timeZone);
+}
+
+function getStreakBonusPct(streakCount) {
+  const streak = Math.max(0, Number(streakCount) || 0);
+  return Math.min(50, Math.floor(streak / 2));
+}
+
+function sanitizeUpgrades(input) {
+  const next = clone(DEFAULT_UPGRADES);
+  if (!input || typeof input !== "object") return next;
+  for (const actionKey of Object.keys(DEFAULT_UPGRADES)) {
+    const sourceAction = input[actionKey];
+    if (!sourceAction || typeof sourceAction !== "object") continue;
+    for (const upgradeKey of UPGRADE_KEYS) {
+      const parsed = Math.max(0, Math.floor(Number(sourceAction[upgradeKey]) || 0));
+      next[actionKey][upgradeKey] = parsed;
+    }
+  }
+  return next;
+}
+
+function sanitizeAchievementState(input) {
+  const state = {};
+  if (!input || typeof input !== "object") return state;
+  for (const chain of ACHIEVEMENT_CHAINS) {
+    const claimedCount = Math.max(
+      0,
+      Math.floor(Number(input?.[chain.key]?.claimedCount) || 0)
+    );
+    state[chain.key] = {
+      claimedCount: Math.min(chain.thresholds.length, claimedCount)
+    };
+  }
+  return state;
 }
 
 function xpRequiredForLevel(level) {
@@ -123,7 +289,14 @@ function createDatabase(connectionString) {
 
 async function getPlayerByDiscordId(db, discordUserId, client = db) {
   const result = await client.query(PLAYER_SELECT_SQL, [discordUserId]);
-  return result.rows[0] || null;
+  const row = result.rows[0] || null;
+  if (!row) return null;
+  return {
+    ...row,
+    timezone: row.timezone ? safeTimeZone(row.timezone) : null,
+    upgrades: sanitizeUpgrades(row.upgrades || {}),
+    achievementState: sanitizeAchievementState(row.achievementState || {})
+  };
 }
 
 function randomInt(min, max) {
@@ -159,7 +332,19 @@ async function initDatabase(db) {
     "huntTrophyCount" INTEGER NOT NULL DEFAULT 0,
     "discordUsername" TEXT,
     "discordAvatarHash" TEXT,
-    "devConfig" JSONB
+    "devConfig" JSONB,
+    timezone TEXT,
+    "dailyClaimDay" TEXT,
+    "dailyStreak" INTEGER NOT NULL DEFAULT 0,
+    "dailyTaskDay" TEXT,
+    "dailyTaskInteractions" INTEGER NOT NULL DEFAULT 0,
+    "dailyTaskClaimDay" TEXT,
+    "dailyTaskStreak" INTEGER NOT NULL DEFAULT 0,
+    "totalBonusRewards" INTEGER NOT NULL DEFAULT 0,
+    "totalGamblingWins" INTEGER NOT NULL DEFAULT 0,
+    "totalGamblingPlays" INTEGER NOT NULL DEFAULT 0,
+    "achievementState" JSONB,
+    upgrades JSONB
   )`);
 
   const requiredColumns = [
@@ -176,7 +361,19 @@ async function initDatabase(db) {
     `"huntTrophyCount" INTEGER NOT NULL DEFAULT 0`,
     `"discordUsername" TEXT`,
     `"discordAvatarHash" TEXT`,
-    `"devConfig" JSONB`
+    `"devConfig" JSONB`,
+    `timezone TEXT`,
+    `"dailyClaimDay" TEXT`,
+    `"dailyStreak" INTEGER NOT NULL DEFAULT 0`,
+    `"dailyTaskDay" TEXT`,
+    `"dailyTaskInteractions" INTEGER NOT NULL DEFAULT 0`,
+    `"dailyTaskClaimDay" TEXT`,
+    `"dailyTaskStreak" INTEGER NOT NULL DEFAULT 0`,
+    `"totalBonusRewards" INTEGER NOT NULL DEFAULT 0`,
+    `"totalGamblingWins" INTEGER NOT NULL DEFAULT 0`,
+    `"totalGamblingPlays" INTEGER NOT NULL DEFAULT 0`,
+    `"achievementState" JSONB`,
+    `upgrades JSONB`
   ];
 
   for (const colDef of requiredColumns) {
@@ -367,6 +564,213 @@ function getActionMetadata() {
   };
 }
 
+function getUpgradeCost(action, upgradeKey, currentLevel) {
+  const baseByKey = {
+    cash: 220,
+    xp: 260,
+    drop: 3200
+  };
+  const growthByKey = {
+    cash: 1.33,
+    xp: 1.38,
+    drop: 1.72
+  };
+  const base = baseByKey[upgradeKey] || 500;
+  const growth = growthByKey[upgradeKey] || 1.4;
+  const actionBias = action === "hunt" ? 1.08 : action === "fish" ? 1.03 : 1;
+  const level = Math.max(0, Math.floor(Number(currentLevel) || 0));
+  return Math.max(1, Math.floor(base * Math.pow(growth, level) * actionBias));
+}
+
+function getUpgradeEffects(upgrades, action) {
+  const actionUpgrades = sanitizeUpgrades(upgrades)[action] || DEFAULT_UPGRADES[action];
+  return {
+    cashMultiplier: 1 + actionUpgrades.cash * 0.05,
+    xpMultiplier: 1 + actionUpgrades.xp * 0.05,
+    dropReductionFactor: Math.min(0.5, actionUpgrades.drop * 0.015)
+  };
+}
+
+function applyDropBoostToBonusTiers(bonusTiers, dropReductionFactor) {
+  if (!Array.isArray(bonusTiers) || bonusTiers.length === 0) return [];
+  const nextTiers = bonusTiers.map((tier) => ({ ...tier }));
+  const noDropIndex = nextTiers.findIndex((tier) => tier.coins === 0 && !tier.itemKey);
+  if (noDropIndex < 0 || dropReductionFactor <= 0) return nextTiers;
+
+  const weighted = nextTiers.map((tier, index) => {
+    const original = Math.max(0, Number(tier.chancePct) || 0);
+    if (index === noDropIndex) {
+      return { ...tier, chancePct: original * (1 - dropReductionFactor) };
+    }
+    return { ...tier, chancePct: original };
+  });
+
+  const total = weighted.reduce((sum, tier) => sum + tier.chancePct, 0);
+  if (total <= 0) return nextTiers;
+  return weighted.map((tier) => ({
+    ...tier,
+    chancePct: (tier.chancePct / total) * 100
+  }));
+}
+
+function buildUpgradeSummary(player) {
+  const upgrades = sanitizeUpgrades(player?.upgrades || {});
+  const summary = {};
+  for (const actionKey of Object.keys(DEFAULT_UPGRADES)) {
+    summary[actionKey] = {};
+    for (const upgradeKey of UPGRADE_KEYS) {
+      const currentLevel = upgrades[actionKey][upgradeKey];
+      summary[actionKey][upgradeKey] = {
+        level: currentLevel,
+        nextCost: getUpgradeCost(actionKey, upgradeKey, currentLevel)
+      };
+    }
+    summary[actionKey].effects = getUpgradeEffects(upgrades, actionKey);
+  }
+  return summary;
+}
+
+function buildAchievementProgress(player) {
+  const state = sanitizeAchievementState(player?.achievementState || {});
+  const chains = ACHIEVEMENT_CHAINS.map((chain) => {
+    const progress = Math.max(0, Math.floor(chain.progressValue(player, state)));
+    const currentStage = chain.thresholds.filter((threshold) => progress >= threshold).length;
+    const claimedCount = Math.min(chain.thresholds.length, state[chain.key]?.claimedCount || 0);
+    const nextTarget =
+      currentStage < chain.thresholds.length ? chain.thresholds[currentStage] : null;
+    const nextReward =
+      claimedCount < chain.rewards.length ? chain.rewards[claimedCount] : null;
+    return {
+      key: chain.key,
+      label: chain.label,
+      progress,
+      currentStage,
+      totalStages: chain.thresholds.length,
+      claimedStages: claimedCount,
+      thresholds: chain.thresholds,
+      rewards: chain.rewards,
+      nextTarget,
+      nextReward
+    };
+  });
+  const completedStagesExcludingMeta = chains
+    .filter((chain) => chain.key !== "completeAchievements")
+    .reduce((sum, chain) => sum + chain.claimedStages, 0);
+  return {
+    chains,
+    completedStagesExcludingMeta
+  };
+}
+
+async function grantPendingAchievements(client, player) {
+  const state = sanitizeAchievementState(player?.achievementState || {});
+  const grantedByChain = {};
+  let totalGranted = 0;
+  let changed = false;
+
+  for (const chain of ACHIEVEMENT_CHAINS) {
+    const claimedCount = Math.min(
+      chain.thresholds.length,
+      Math.max(0, state[chain.key]?.claimedCount || 0)
+    );
+    let nextClaimedCount = claimedCount;
+    const progress = Math.max(0, Math.floor(chain.progressValue(player, state)));
+    const unlocked = chain.thresholds.filter((threshold) => progress >= threshold).length;
+    while (nextClaimedCount < unlocked) {
+      const reward = Number(chain.rewards[nextClaimedCount] || 0);
+      if (reward > 0) {
+        totalGranted += reward;
+        grantedByChain[chain.key] = (grantedByChain[chain.key] || 0) + reward;
+      }
+      nextClaimedCount += 1;
+      changed = true;
+    }
+    state[chain.key] = { claimedCount: nextClaimedCount };
+  }
+
+  if (!changed) {
+    return {
+      player,
+      grantedCoins: 0,
+      grantedByChain: {}
+    };
+  }
+
+  await client.query(
+    `UPDATE players
+     SET money = money + $1,
+         "totalMoneyEarned" = "totalMoneyEarned" + $1,
+         "achievementState" = $2::jsonb,
+         "updatedAt" = NOW()
+     WHERE "discordUserId" = $3`,
+    [totalGranted, JSON.stringify(state), player.discordUserId]
+  );
+
+  const updated = await getPlayerByDiscordId(client, player.discordUserId, client);
+  return {
+    player: updated,
+    grantedCoins: totalGranted,
+    grantedByChain
+  };
+}
+
+function buildDailyState(player, nowMs) {
+  const timezone = safeTimeZone(player?.timezone || "UTC");
+  const currentDay = getDayKey(nowMs, timezone);
+  const nextResetAt = getNextMidnightUtcMs(nowMs, timezone);
+  const previousDay = previousDayKey(currentDay, timezone);
+
+  const dailyClaimedToday = player?.dailyClaimDay === currentDay;
+  const dailyNextStreak = dailyClaimedToday
+    ? Math.max(1, Number(player?.dailyStreak || 0))
+    : player?.dailyClaimDay === previousDay
+      ? Number(player?.dailyStreak || 0) + 1
+      : 1;
+  const dailyBonusPct = getStreakBonusPct(dailyNextStreak);
+  const dailyReward = Math.floor(DAILY_BASE_REWARD * (1 + dailyBonusPct / 100));
+
+  const currentTaskDay = player?.dailyTaskDay === currentDay ? currentDay : currentDay;
+  const taskInteractions =
+    player?.dailyTaskDay === currentDay
+      ? Math.max(0, Number(player?.dailyTaskInteractions || 0))
+      : 0;
+  const taskClaimedToday = player?.dailyTaskClaimDay === currentDay;
+  const taskNextStreak = taskClaimedToday
+    ? Math.max(1, Number(player?.dailyTaskStreak || 0))
+    : player?.dailyTaskClaimDay === previousDay
+      ? Number(player?.dailyTaskStreak || 0) + 1
+      : 1;
+  const taskBonusPct = getStreakBonusPct(taskNextStreak);
+  const taskReward = Math.floor(
+    DAILY_CHALLENGE_BASE_REWARD * (1 + taskBonusPct / 100)
+  );
+
+  return {
+    timezone,
+    currentDay,
+    currentTaskDay,
+    nextResetAt,
+    daily: {
+      ready: !dailyClaimedToday,
+      claimedToday: dailyClaimedToday,
+      streak: Math.max(0, Number(player?.dailyStreak || 0)),
+      nextStreak: dailyNextStreak,
+      bonusPct: dailyBonusPct,
+      rewardCoins: dailyReward
+    },
+    challenge: {
+      ready: taskInteractions >= DAILY_CHALLENGE_INTERACTIONS_REQUIRED && !taskClaimedToday,
+      claimedToday: taskClaimedToday,
+      streak: Math.max(0, Number(player?.dailyTaskStreak || 0)),
+      nextStreak: taskNextStreak,
+      bonusPct: taskBonusPct,
+      requiredInteractions: DAILY_CHALLENGE_INTERACTIONS_REQUIRED,
+      interactions: taskInteractions,
+      rewardCoins: taskReward
+    }
+  };
+}
+
 async function lockActionCooldown(db, discordUserId, action) {
   const actionConfig = getActionConfig(action);
   if (!actionConfig) throw new Error("Unsupported action");
@@ -448,6 +852,8 @@ async function performAction(db, discordUserId, action, options = {}) {
     );
     const playerBefore = currentPlayerResult.rows[0];
     const actionConfig = getEffectiveActionConfigForPlayer(playerBefore, action);
+    const upgrades = sanitizeUpgrades(playerBefore.upgrades || {});
+    const upgradeEffects = getUpgradeEffects(upgrades, action);
 
     const now = Date.now();
     const cooldownUntil = Number(playerBefore[actionConfig.cooldownColumn]) || 0;
@@ -463,9 +869,16 @@ async function performAction(db, discordUserId, action, options = {}) {
 
     const payoutTier = rollWeightedTier(actionConfig.payoutTiers);
     const baseRewardRaw = randomInt(payoutTier.min, payoutTier.max);
-    const bonusTier = rollWeightedTier(actionConfig.bonusTiers);
+    const boostedBonusTiers = applyDropBoostToBonusTiers(
+      actionConfig.bonusTiers,
+      upgradeEffects.dropReductionFactor
+    );
+    const bonusTier = rollWeightedTier(boostedBonusTiers);
     const bonusCoinsRaw = bonusTier.coins;
-    const xpGained = randomInt(actionConfig.xpMin, actionConfig.xpMax);
+    const xpGained = Math.max(
+      1,
+      Math.round(randomInt(actionConfig.xpMin, actionConfig.xpMax) * upgradeEffects.xpMultiplier)
+    );
 
     let nextLevel = Math.max(1, Number(playerBefore.level) || 1);
     let nextXp = Math.max(0, Number(playerBefore.xp) || 0) + xpGained;
@@ -478,7 +891,9 @@ async function performAction(db, discordUserId, action, options = {}) {
       nextXp -= neededXp;
       nextLevel += 1;
       const levelRewardRaw = levelRewardCoins(nextLevel);
-      const levelReward = Math.round(levelRewardRaw * cashMultiplier);
+      const levelReward = Math.round(
+        levelRewardRaw * cashMultiplier * upgradeEffects.cashMultiplier
+      );
       levelRewardTotal += levelReward;
       levelUps.push({ level: nextLevel, rewardCoins: levelReward });
     }
@@ -488,12 +903,17 @@ async function performAction(db, discordUserId, action, options = {}) {
       nextXp = 0;
     }
 
-    const baseReward = Math.round(baseRewardRaw * cashMultiplier);
-    const bonusCoins = Math.round(bonusCoinsRaw * cashMultiplier);
+    const effectiveCashMultiplier = cashMultiplier * upgradeEffects.cashMultiplier;
+    const baseReward = Math.round(baseRewardRaw * effectiveCashMultiplier);
+    const bonusCoins = Math.round(bonusCoinsRaw * effectiveCashMultiplier);
     const totalRewardCoins = baseReward + bonusCoins + levelRewardTotal;
     const digTrophyGain = bonusTier.itemKey === "dig_trophy" ? 1 : 0;
     const fishTrophyGain = bonusTier.itemKey === "fish_trophy" ? 1 : 0;
     const huntTrophyGain = bonusTier.itemKey === "hunt_trophy" ? 1 : 0;
+    const bonusRewardCountGain = bonusTier.coins > 0 || bonusTier.itemKey ? 1 : 0;
+
+    const dailyState = buildDailyState(playerBefore, now);
+    const nextDailyTaskInteractions = dailyState.challenge.interactions + 1;
 
     const nextCooldownUntil =
       preserveExistingCooldown && cooldownUntil > now
@@ -512,8 +932,11 @@ async function performAction(db, discordUserId, action, options = {}) {
            "fishTrophyCount" = "fishTrophyCount" + $7,
            "huntTrophyCount" = "huntTrophyCount" + $8,
            "${actionConfig.cooldownColumn}" = $9,
+           "dailyTaskDay" = $10,
+           "dailyTaskInteractions" = $11,
+           "totalBonusRewards" = "totalBonusRewards" + $12,
            "updatedAt" = NOW()
-       WHERE "discordUserId" = $10`,
+       WHERE "discordUserId" = $13`,
       [
         totalRewardCoins,
         nextXp,
@@ -524,11 +947,16 @@ async function performAction(db, discordUserId, action, options = {}) {
         fishTrophyGain,
         huntTrophyGain,
         nextCooldownUntil,
+        dailyState.currentDay,
+        nextDailyTaskInteractions,
+        bonusRewardCountGain,
         discordUserId
       ]
     );
 
-    const playerAfter = await getPlayerByDiscordId(db, discordUserId, client);
+    const playerAfterRaw = await getPlayerByDiscordId(db, discordUserId, client);
+    const achievementGrant = await grantPendingAchievements(client, playerAfterRaw);
+    const playerAfter = achievementGrant.player;
     await client.query("COMMIT");
     return {
       ok: true,
@@ -542,11 +970,320 @@ async function performAction(db, discordUserId, action, options = {}) {
         bonusLabel: bonusTier.label,
         bonusItemKey: bonusTier.itemKey || null,
         bonusItemImage: bonusTier.itemImage || null,
+        bonusChancePct:
+          boostedBonusTiers.find((tier) => tier.label === bonusTier.label)?.chancePct ||
+          bonusTier.chancePct,
         xpGained,
         levelRewardCoins: levelRewardTotal,
-        levelUps
+        levelUps,
+        achievementCoins: achievementGrant.grantedCoins
       },
       player: playerAfter
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function setPlayerTimezone(db, discordUserId, timezone) {
+  const safeTz = safeTimeZone(timezone);
+  await db.query(
+    `INSERT INTO players ("discordUserId", money, timezone, upgrades, "achievementState")
+     VALUES ($1, 0, $2, $3::jsonb, $4::jsonb)
+     ON CONFLICT ("discordUserId")
+     DO UPDATE SET timezone = $2, "updatedAt" = NOW()`,
+    [
+      discordUserId,
+      safeTz,
+      JSON.stringify(DEFAULT_UPGRADES),
+      JSON.stringify({})
+    ]
+  );
+  return getPlayerByDiscordId(db, discordUserId);
+}
+
+async function getDailySummary(db, discordUserId) {
+  const player = await getPlayerByDiscordId(db, discordUserId);
+  if (!player) return null;
+  const now = Date.now();
+  return {
+    timezone: safeTimeZone(player.timezone || "UTC"),
+    now,
+    ...buildDailyState(player, now)
+  };
+}
+
+async function claimDailyReward(db, discordUserId) {
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO players ("discordUserId", money, upgrades, "achievementState")
+       VALUES ($1, 0, $2::jsonb, $3::jsonb)
+       ON CONFLICT ("discordUserId") DO NOTHING`,
+      [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
+    );
+
+    const currentPlayerResult = await client.query(
+      `${PLAYER_SELECT_SQL} FOR UPDATE`,
+      [discordUserId]
+    );
+    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const now = Date.now();
+    const dailyState = buildDailyState(playerBefore, now);
+    if (!dailyState.daily.ready) {
+      await client.query("COMMIT");
+      return {
+        ok: false,
+        reason: "Daily reward already claimed today",
+        state: dailyState,
+        player: playerBefore
+      };
+    }
+
+    const previousDay = previousDayKey(dailyState.currentDay, dailyState.timezone);
+    const nextStreak =
+      playerBefore.dailyClaimDay === previousDay
+        ? Number(playerBefore.dailyStreak || 0) + 1
+        : 1;
+    const rewardCoins = Math.floor(
+      DAILY_BASE_REWARD * (1 + getStreakBonusPct(nextStreak) / 100)
+    );
+
+    await client.query(
+      `UPDATE players
+       SET money = money + $1,
+           "totalMoneyEarned" = "totalMoneyEarned" + $1,
+           "dailyClaimDay" = $2,
+           "dailyStreak" = $3,
+           "updatedAt" = NOW()
+       WHERE "discordUserId" = $4`,
+      [rewardCoins, dailyState.currentDay, nextStreak, discordUserId]
+    );
+
+    const playerAfterDaily = await getPlayerByDiscordId(client, discordUserId, client);
+    const achievementGrant = await grantPendingAchievements(client, playerAfterDaily);
+    await client.query("COMMIT");
+    return {
+      ok: true,
+      rewardCoins,
+      achievementCoins: achievementGrant.grantedCoins,
+      player: achievementGrant.player,
+      state: buildDailyState(achievementGrant.player, now)
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function claimDailyChallengeReward(db, discordUserId) {
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO players ("discordUserId", money, upgrades, "achievementState")
+       VALUES ($1, 0, $2::jsonb, $3::jsonb)
+       ON CONFLICT ("discordUserId") DO NOTHING`,
+      [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
+    );
+
+    const currentPlayerResult = await client.query(
+      `${PLAYER_SELECT_SQL} FOR UPDATE`,
+      [discordUserId]
+    );
+    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const now = Date.now();
+    const dailyState = buildDailyState(playerBefore, now);
+    if (!dailyState.challenge.ready) {
+      await client.query("COMMIT");
+      return {
+        ok: false,
+        reason: "Daily challenge is not ready yet",
+        state: dailyState,
+        player: playerBefore
+      };
+    }
+
+    const previousDay = previousDayKey(dailyState.currentDay, dailyState.timezone);
+    const nextStreak =
+      playerBefore.dailyTaskClaimDay === previousDay
+        ? Number(playerBefore.dailyTaskStreak || 0) + 1
+        : 1;
+    const rewardCoins = Math.floor(
+      DAILY_CHALLENGE_BASE_REWARD * (1 + getStreakBonusPct(nextStreak) / 100)
+    );
+
+    await client.query(
+      `UPDATE players
+       SET money = money + $1,
+           "totalMoneyEarned" = "totalMoneyEarned" + $1,
+           "dailyTaskClaimDay" = $2,
+           "dailyTaskStreak" = $3,
+           "dailyTaskDay" = $2,
+           "updatedAt" = NOW()
+       WHERE "discordUserId" = $4`,
+      [rewardCoins, dailyState.currentDay, nextStreak, discordUserId]
+    );
+
+    const playerAfterClaim = await getPlayerByDiscordId(client, discordUserId, client);
+    const achievementGrant = await grantPendingAchievements(client, playerAfterClaim);
+    await client.query("COMMIT");
+    return {
+      ok: true,
+      rewardCoins,
+      achievementCoins: achievementGrant.grantedCoins,
+      player: achievementGrant.player,
+      state: buildDailyState(achievementGrant.player, now)
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function getAchievementSummary(db, discordUserId) {
+  const player = await getPlayerByDiscordId(db, discordUserId);
+  if (!player) return null;
+  return buildAchievementProgress(player);
+}
+
+async function settleGamblingResult(
+  db,
+  discordUserId,
+  { game, coinDelta, won = false, countInteraction = true }
+) {
+  const allowedGames = new Set(["coinflip", "blackjack", "slots"]);
+  if (!allowedGames.has(game)) throw new Error("Unsupported gambling game");
+  if (!Number.isInteger(coinDelta)) throw new Error("coinDelta must be an integer");
+  if (Math.abs(coinDelta) > MAX_BET_COINS * 12) {
+    throw new Error("coinDelta exceeds allowed range");
+  }
+
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO players ("discordUserId", money, upgrades, "achievementState")
+       VALUES ($1, 0, $2::jsonb, $3::jsonb)
+       ON CONFLICT ("discordUserId") DO NOTHING`,
+      [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
+    );
+
+    await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
+    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+
+    if (coinDelta < 0 && Number(playerBefore.money || 0) < Math.abs(coinDelta)) {
+      await client.query("COMMIT");
+      return {
+        ok: false,
+        error: "Insufficient funds",
+        player: playerBefore
+      };
+    }
+
+    const now = Date.now();
+    const dailyState = buildDailyState(playerBefore, now);
+    const interactionGain = countInteraction ? 1 : 0;
+    const nextInteractions =
+      interactionGain > 0
+        ? dailyState.challenge.interactions + interactionGain
+        : dailyState.challenge.interactions;
+    const positiveGain = Math.max(0, coinDelta);
+
+    await client.query(
+      `UPDATE players
+       SET money = GREATEST(0, money + $1),
+           "totalMoneyEarned" = "totalMoneyEarned" + $2,
+           "totalCommandsUsed" = "totalCommandsUsed" + $3,
+           "totalGamblingPlays" = "totalGamblingPlays" + $4,
+           "totalGamblingWins" = "totalGamblingWins" + $5,
+           "dailyTaskDay" = $6,
+           "dailyTaskInteractions" = $7,
+           "updatedAt" = NOW()
+       WHERE "discordUserId" = $8`,
+      [
+        coinDelta,
+        positiveGain,
+        interactionGain,
+        interactionGain,
+        won ? 1 : 0,
+        dailyState.currentDay,
+        nextInteractions,
+        discordUserId
+      ]
+    );
+
+    const playerAfterResult = await getPlayerByDiscordId(client, discordUserId, client);
+    const achievementGrant = await grantPendingAchievements(client, playerAfterResult);
+    await client.query("COMMIT");
+    return {
+      ok: true,
+      player: achievementGrant.player,
+      achievementCoins: achievementGrant.grantedCoins
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function purchaseUpgrade(db, discordUserId, action, upgradeKey) {
+  if (!ACTIONS[action]) throw new Error("Unsupported action");
+  if (!UPGRADE_KEYS.includes(upgradeKey)) throw new Error("Unsupported upgrade type");
+
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO players ("discordUserId", money, upgrades, "achievementState")
+       VALUES ($1, 0, $2::jsonb, $3::jsonb)
+       ON CONFLICT ("discordUserId") DO NOTHING`,
+      [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
+    );
+
+    await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
+    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const upgrades = sanitizeUpgrades(playerBefore.upgrades || {});
+    const currentLevel = upgrades[action][upgradeKey];
+    const cost = getUpgradeCost(action, upgradeKey, currentLevel);
+
+    if (Number(playerBefore.money || 0) < cost) {
+      await client.query("COMMIT");
+      return {
+        ok: false,
+        error: "Not enough coins",
+        cost,
+        player: playerBefore
+      };
+    }
+
+    upgrades[action][upgradeKey] = currentLevel + 1;
+    await client.query(
+      `UPDATE players
+       SET money = money - $1,
+           upgrades = $2::jsonb,
+           "updatedAt" = NOW()
+       WHERE "discordUserId" = $3`,
+      [cost, JSON.stringify(upgrades), discordUserId]
+    );
+
+    const playerAfter = await getPlayerByDiscordId(client, discordUserId, client);
+    await client.query("COMMIT");
+    return {
+      ok: true,
+      cost,
+      player: playerAfter,
+      upgrades: buildUpgradeSummary(playerAfter)
     };
   } catch (err) {
     await client.query("ROLLBACK");
@@ -559,6 +1296,7 @@ async function performAction(db, discordUserId, action, options = {}) {
 module.exports = {
   ACTION_COOLDOWN_MS,
   MAX_LEVEL,
+  DAILY_CHALLENGE_INTERACTIONS_REQUIRED,
   createDatabase,
   initDatabase,
   getPlayerByDiscordId,
@@ -572,6 +1310,16 @@ module.exports = {
   performAction,
   getActionConfig,
   getActionMetadata,
+  buildAchievementProgress,
+  buildDailyState,
+  buildUpgradeSummary,
+  setPlayerTimezone,
+  getDailySummary,
+  claimDailyReward,
+  claimDailyChallengeReward,
+  getAchievementSummary,
+  settleGamblingResult,
+  purchaseUpgrade,
   xpRequiredForLevel,
   levelRewardCoins
 };
