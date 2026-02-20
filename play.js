@@ -60,7 +60,7 @@ const FALLBACK_META = {
       ],
       bonusTiers: [
         { chancePct: 87, coins: 0, label: "No extra drop", itemKey: null, itemImage: null },
-        { chancePct: 10, coins: 8, label: "Coin Nugget" },
+        { chancePct: 10, coins: 8, label: "Gold Coin" },
         { chancePct: 2, coins: 20, label: "Rare Relic" },
         {
           chancePct: 1,
@@ -125,11 +125,18 @@ let cooldownTimer = null;
 let profileSyncTimer = null;
 let currentProfile = null;
 const appBasePath = window.location.pathname.replace(/\/(?:play(?:\.html)?|index\.html)?$/, "");
+const digAnimationImageEl = document.getElementById("anim-dig-image");
 
 function resolveAssetUrl(url) {
   if (typeof url !== "string") return url;
   if (url.startsWith("/assets/")) return `${appBasePath}${url}`;
   return url;
+}
+
+function setDigAnimationVariant(bonusLabel) {
+  if (!digAnimationImageEl) return;
+  const assetName = bonusLabel === "Gold Coin" ? "DugDugCoin.png" : "DugDug.png";
+  digAnimationImageEl.src = `./assets/${assetName}?v=4`;
 }
 
 function setStatus(message, tone = "") {
@@ -361,9 +368,12 @@ async function loadProfile() {
   updateButtonsByCooldown();
 }
 
-async function playAnimation(action) {
+async function playAnimation(action, bonusLabel = "") {
   const target = animByAction[action];
   if (!target) return;
+  if (action === "dig") {
+    setDigAnimationVariant(bonusLabel);
+  }
   Object.values(animByAction).forEach((node) => {
     node.hidden = true;
   });
@@ -407,14 +417,10 @@ async function performAction(action) {
   setStatus(`${action.toUpperCase()} action started...`);
 
   try {
-    const [apiResponse] = await Promise.all([
-      fetch(`${apiBaseUrl}/players/${discordUserId}/actions/${action}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" }
-      }),
-      playAnimation(action)
-    ]);
-
+    const apiResponse = await fetch(`${apiBaseUrl}/players/${discordUserId}/actions/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }
+    });
     const payload = await apiResponse.json();
     if (apiResponse.status === 429) {
       const remaining = Number(payload.cooldownRemainingMs || 0);
@@ -436,6 +442,8 @@ async function performAction(action) {
       updateButtonsByCooldown();
       return;
     }
+
+    await playAnimation(action, payload.rewardBreakdown?.bonusLabel || "");
 
     setWallet(payload.player.money);
     setLevelBar(payload.player);
