@@ -1,19 +1,37 @@
-# Bot Project Structure
+# Bot + API + Website
 
-This project has three services:
+This repo has 3 services:
 
-- `api/`: Express API (OAuth + player data)
-- `web/`: website frontend
-- `bot/`: Discord bot client
+- `api/` - Express API (OAuth, player data, cooldowns, rewards)
+- `web/` - Website UI (`index.html`, `play.html`)
+- `bot/` - Discord slash command bot
 
-## Prerequisites
+## What Is Synced
 
-- Node.js 18+
-- npm
+The bot and website both use the same API and same database.
 
-## Local Development
+- Actions: `dig`, `fish`, `hunt`
+- Shared cooldowns
+- Shared wallet, level, XP, trophies
+- Same reward labels:
+  - Dig bonus: `Gold Coin`, `Da Bone`, `Collectors Greed`
+  - Fish trophy: `Midnight Ocean`
+  - Hunt trophy: `Many Heads`
 
-### 1) API
+## Bot Commands
+
+- `/start` - create account
+- `/profile` - show profile
+- `/wallet` - show wallet
+- `/play` - get website URL
+- `/dig` `/fish` `/hunt` - play minigame in Discord
+- `/loottable action:<dig|fish|hunt>` - show drop chances
+
+`/loottable` footer confirms bot cash bonus: bot commands yield 5% more cash.
+
+## Local Setup
+
+## 1) API
 
 ```bash
 cd api
@@ -21,29 +39,23 @@ npm install
 npm start
 ```
 
-Create `api/.env` from `api/.env.example`.
+Copy `api/.env.example` to `api/.env` and fill values.
 
-Key API env vars:
+Required:
 
-- `HOST` (default `0.0.0.0`)
-- `PORT` (default `3000`)
-- `DATABASE_URL` (required Postgres connection string)
-- `ALLOWED_ORIGIN` (local: `http://localhost:5173`)
-- `WEB_BASE_URL` (local: `http://localhost:5173`)
-- `WEB_PLAY_PATH` (local: `/play`)
-- `DEV_OWNER_DISCORD_USER_ID` (optional, default `931015893377482854`)
+- `DATABASE_URL` (Postgres)
 - `DISCORD_CLIENT_ID`
 - `DISCORD_CLIENT_SECRET`
-- `DISCORD_REDIRECT_URI` (local: `http://localhost:3000/auth/discord/callback`)
+- `DISCORD_REDIRECT_URI`
 
-Optional hardening env vars:
+Useful:
 
-- `ENABLE_REQUEST_LOGS=true`
-- `RATE_LIMIT_WINDOW_MS=10000`
-- `RATE_LIMIT_MAX_REQUESTS_PER_IP=120`
-- `RATE_LIMIT_MAX_ACTIONS_PER_USER=8`
+- `ALLOWED_ORIGIN` (example: `http://localhost:5173`)
+- `WEB_BASE_URL` (example: `http://localhost:5173`)
+- `WEB_PLAY_PATH` (local: `/play`)
+- `DEV_OWNER_DISCORD_USER_ID`
 
-### 2) Website
+## 2) Website
 
 ```bash
 cd web
@@ -51,15 +63,9 @@ npm install
 npm start
 ```
 
-Create `web/.env` from `web/.env.example`.
+Copy `web/.env.example` to `web/.env`.
 
-Key web env vars:
-
-- `HOST` (default `0.0.0.0`)
-- `PORT` (default `5173`)
-- `API_BASE_URL` (local: `http://localhost:3000`)
-
-### 3) Discord Bot
+## 3) Bot
 
 ```bash
 cd bot
@@ -67,40 +73,41 @@ npm install
 npm start
 ```
 
-Create `bot/.env` from `bot/.env.example`.
+Copy `bot/.env.example` to `bot/.env`.
 
-Required bot env vars:
+Required:
 
 - `DISCORD_TOKEN`
 - `DISCORD_CLIENT_ID`
-- `API_BASE_URL` (usually `http://localhost:3000`)
+- `API_BASE_URL`
 
-## Production Flow (Current Working Setup)
+Optional:
 
-Frontend is hosted on GitHub Pages and API is hosted on Render.
+- `WEB_PLAY_URL` (fallback for `/play`)
 
-- Website: `https://pimpbrisket.github.io/pimpbrisket/`
-- API: `https://pimpbrisket.onrender.com`
+## Production (GitHub Pages + Render)
 
-### Render API env values
+- Website (GitHub Pages): `https://pimpbrisket.github.io/pimpbrisket/`
+- API (Render): `https://pimpbrisket.onrender.com`
 
-- `DATABASE_URL=<Render Postgres connection string>`
+Recommended API env (Render):
+
+- `DATABASE_URL=<Render Postgres URL>`
 - `ALLOWED_ORIGIN=https://pimpbrisket.github.io`
 - `WEB_BASE_URL=https://pimpbrisket.github.io/pimpbrisket`
 - `WEB_PLAY_PATH=/play.html`
+- `PUBLIC_API_BASE_URL=https://pimpbrisket.onrender.com`
 - `DISCORD_REDIRECT_URI=https://pimpbrisket.onrender.com/auth/discord/callback`
 - `DISCORD_CLIENT_ID=<set>`
 - `DISCORD_CLIENT_SECRET=<set>`
 
-### Discord Developer Portal
-
-Add redirect URI:
+Discord Developer Portal redirect URI:
 
 - `https://pimpbrisket.onrender.com/auth/discord/callback`
 
-## Deploy Website To GitHub Pages
+## Deploy Website (gh-pages)
 
-Run from repo root:
+From repo root:
 
 ```bash
 git add .
@@ -111,26 +118,23 @@ git subtree split --prefix=web/public -b gh-pages
 git push -u origin gh-pages --force
 ```
 
-GitHub repo settings:
+If `git` is not on PATH in terminal:
 
-1. `Settings`
-2. `Pages`
-3. Source: `Deploy from a branch`
-4. Branch: `gh-pages` and folder `/ (root)`
+```bash
+"C:\Program Files\Git\cmd\git.exe" add .
+"C:\Program Files\Git\cmd\git.exe" commit -m "Update site"
+"C:\Program Files\Git\cmd\git.exe" push origin main
+"C:\Program Files\Git\cmd\git.exe" branch -D gh-pages
+"C:\Program Files\Git\cmd\git.exe" subtree split --prefix=web/public -b gh-pages
+"C:\Program Files\Git\cmd\git.exe" push -u origin gh-pages --force
+```
 
-## API Quick Test
+## Health Check
 
 - `https://pimpbrisket.onrender.com/health`
 
-Expected response shape:
+Expected shape:
 
 ```json
 {"ok":true,"timestamp":"...","uptimeSec":123,"db":{"ok":true}}
 ```
-
-## App Flow
-
-1. User opens website and clicks Discord login.
-2. Website sends user to API `/auth/discord/login`.
-3. API completes OAuth, registers user, redirects to website `play.html`.
-4. Web and bot both call the same API actions (`dig`, `fish`, `hunt`) and share cooldowns.

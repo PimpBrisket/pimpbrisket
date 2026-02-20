@@ -147,6 +147,22 @@ let selectedChanceAction = "dig";
 let devSaveTimer = null;
 let digAnimationVersion = 0;
 
+async function readJsonSafely(response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch (_err) {
+    return {};
+  }
+}
+
+function getApiError(payload, fallback) {
+  return payload && typeof payload.error === "string" && payload.error.trim()
+    ? payload.error
+    : fallback;
+}
+
 function resolveAssetUrl(url) {
   if (typeof url !== "string") return url;
   if (url.startsWith("/assets/")) return `${appBasePath}${url}`;
@@ -234,19 +250,21 @@ function populateProfilePanel(profile) {
     return;
   }
 
-  const xpText =
-    Number(profile.level) >= Number(profile.maxLevel)
-      ? "MAX"
-      : `${profile.xp}/${profile.xpToNextLevel}`;
+  const lifetimeXp = Number(profile.totalXpEarned || 0);
+  const digCount = Number(profile.trophyCollection?.dig?.count || 0);
+  const fishCount = Number(profile.trophyCollection?.fish?.count || 0);
+  const huntCount = Number(profile.trophyCollection?.hunt?.count || 0);
 
   profileNameEl.textContent = profile.discordUsername || "Player Profile";
   profileIdEl.textContent = `Discord ID: ${profile.discordUserId}`;
   profileWalletEl.textContent = `$${profile.money}`;
   profileLevelEl.textContent = `${profile.level}`;
-  profileXpEl.textContent = xpText;
+  profileXpEl.textContent = `${lifetimeXp}`;
   profileCommandsEl.textContent = `${profile.totalCommandsUsed || 0}`;
   profileEarnedEl.textContent = `$${profile.totalMoneyEarned || 0}`;
-  profileTrophiesEl.textContent = `${profile.totalTrophies || 0}`;
+  profileTrophiesEl.textContent = `${digCount > 0 ? "[X]" : "[ ]"} ${
+    fishCount > 0 ? "[X]" : "[ ]"
+  } ${huntCount > 0 ? "[X]" : "[ ]"}`;
   profileJoinedEl.textContent = formatDate(profile.createdAt);
   populateTrophyPanel(profile);
 }
@@ -327,12 +345,17 @@ function queueDevConfigSave() {
   if (!isDevOwner || !isDevModeActive) return;
   if (devSaveTimer) clearTimeout(devSaveTimer);
   devSaveTimer = setTimeout(async () => {
-    const response = await fetch(`${apiBaseUrl}/dev/${discordUserId}/config`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config: { actions: actionMeta.actions } })
-    });
-    if (!response.ok) {
+    try {
+      const response = await fetch(`${apiBaseUrl}/dev/${discordUserId}/config`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: { actions: actionMeta.actions } })
+      });
+      if (!response.ok) {
+        const payload = await readJsonSafely(response);
+        setStatus(getApiError(payload, "Could not save dev changes."), "tone-error");
+      }
+    } catch (_err) {
       setStatus("Could not save dev changes.", "tone-error");
     }
   }, 300);
@@ -492,7 +515,7 @@ async function loadConfig() {
   try {
     const response = await fetch("/config", { signal: controller.signal });
     if (!response.ok) return;
-    const config = await response.json();
+    const config = await readJsonSafely(response);
     if (config.apiBaseUrl) apiBaseUrl = config.apiBaseUrl;
   } catch (_err) {
     // Keep default API base URL.
@@ -506,7 +529,7 @@ async function loadActionMeta() {
     if (isDevOwner && discordUserId) {
       const response = await fetch(`${apiBaseUrl}/dev/${discordUserId}/config`);
       if (response.ok) {
-        const payload = await response.json();
+        const payload = await readJsonSafely(response);
         if (payload?.defaults?.actions) {
           actionMeta = payload.defaults;
           if (payload?.config?.actions) {
@@ -519,7 +542,7 @@ async function loadActionMeta() {
 
     const fallbackResponse = await fetch(`${apiBaseUrl}/meta/actions`);
     if (!fallbackResponse.ok) return;
-    const fallbackPayload = await fallbackResponse.json();
+    const fallbackPayload = await readJsonSafely(fallbackResponse);
     if (fallbackPayload && fallbackPayload.actions) actionMeta = fallbackPayload;
   } catch (_err) {
     // Use fallback action metadata when endpoint is unavailable.
@@ -543,9 +566,10 @@ function resolveUserId() {
 
 async function loadProfile() {
   const response = await fetch(`${apiBaseUrl}/players/${discordUserId}`);
-  if (!response.ok) throw new Error("Could not load profile");
+  const payload = await readJsonSafely(response);
+  if (!response.ok) throw new Error(getApiError(payload, "Could not load profile"));
 
-  const profile = await response.json();
+  const profile = payload;
   currentProfile = profile;
   setWallet(profile.money);
   setLevelBar(profile);
@@ -560,8 +584,8 @@ async function loadProfile() {
 
 async function loadDevConfig() {
   const response = await fetch(`${apiBaseUrl}/dev/${discordUserId}/config`);
-  if (!response.ok) throw new Error("Could not load dev config");
-  const payload = await response.json();
+  const payload = await readJsonSafely(response);
+  if (!response.ok) throw new Error(getApiError(payload, "Could not load dev config"));
   if (payload?.defaults?.actions) {
     actionMeta = payload.defaults;
     if (payload?.config?.actions) {
@@ -576,7 +600,8 @@ async function resetDevConfig() {
     headers: { "Content-Type": "application/json" }
   });
   if (!response.ok) {
-    setStatus("Could not reset dev config.", "tone-error");
+    const payload = await readJsonSafely(response);
+    setStatus(getApiError(payload, "Could not reset dev config."), "tone-error");
     return;
   }
   await loadDevConfig();
@@ -594,7 +619,8 @@ async function setDevLevel(level) {
     body: JSON.stringify({ level })
   });
   if (!response.ok) {
-    setStatus("Could not set level.", "tone-error");
+    const payload = await readJsonSafely(response);
+    setStatus(getApiError(payload, "Could not set level."), "tone-error");
     return;
   }
   await loadProfile();
@@ -654,7 +680,7 @@ async function performAction(action) {
       method: "POST",
       headers: { "Content-Type": "application/json" }
     });
-    const payload = await apiResponse.json();
+    const payload = await readJsonSafely(apiResponse);
     if (apiResponse.status === 429) {
       const remaining = Number(payload.cooldownRemainingMs || 0);
       cooldownUntilByAction[action] = Number(payload.cooldownUntil || 0);
@@ -671,7 +697,7 @@ async function performAction(action) {
     }
 
     if (!apiResponse.ok) {
-      setStatus(payload.error || "Action failed.", "tone-error");
+      setStatus(getApiError(payload, "Action failed."), "tone-error");
       updateButtonsByCooldown();
       return;
     }
@@ -702,8 +728,8 @@ async function performAction(action) {
       );
     }
     updateButtonsByCooldown();
-  } catch (_err) {
-    setStatus("Could not reach API.", "tone-error");
+  } catch (err) {
+    setStatus(err.message || "Could not reach API.", "tone-error");
     updateButtonsByCooldown();
   }
 }
@@ -854,4 +880,9 @@ async function init() {
   setStatus("Choose Dig, Fish, or Hunt.");
 }
 
-init();
+init().catch((err) => {
+  actionButtons.forEach((button) => {
+    button.disabled = true;
+  });
+  setStatus(err.message || "Failed to initialize play screen.", "tone-error");
+});

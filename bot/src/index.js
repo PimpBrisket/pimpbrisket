@@ -19,6 +19,7 @@ const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID;
 const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:3000";
+const WEB_PLAY_URL = process.env.WEB_PLAY_URL || "";
 const TROPHY_EMOJIS = {
   null: "<:null:1413005824745279558>",
   dig: "<:CollectorsGreed:1474080690692686091>",
@@ -65,11 +66,25 @@ function titleCase(value) {
   return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
 }
 
+async function readJsonSafely(response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch (_err) {
+    return {};
+  }
+}
+
 async function registerCommands() {
   const commands = [
     new SlashCommandBuilder().setName("start").setDescription("Create your player account").toJSON(),
     new SlashCommandBuilder().setName("profile").setDescription("Show your player profile").toJSON(),
     new SlashCommandBuilder().setName("wallet").setDescription("Show your current wallet balance").toJSON(),
+    new SlashCommandBuilder()
+      .setName("play")
+      .setDescription("Get the website link to log in and play")
+      .toJSON(),
     new SlashCommandBuilder().setName("dig").setDescription("Play the digging action minigame").toJSON(),
     new SlashCommandBuilder().setName("fish").setDescription("Play the fishing action minigame").toJSON(),
     new SlashCommandBuilder().setName("hunt").setDescription("Play the hunting action minigame").toJSON(),
@@ -115,7 +130,7 @@ async function registerAccount(user) {
       discordAvatarHash: user.avatar || null
     })
   });
-  const payload = await response.json();
+  const payload = await readJsonSafely(response);
   if (!response.ok) {
     throw new Error(payload.error || `API request failed: ${response.status}`);
   }
@@ -125,8 +140,9 @@ async function registerAccount(user) {
 async function fetchProfile(discordUserId) {
   const response = await fetch(`${API_BASE_URL}/players/${discordUserId}`);
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`API request failed: ${response.status}`);
-  return response.json();
+  const payload = await readJsonSafely(response);
+  if (!response.ok) throw new Error(payload.error || `API request failed: ${response.status}`);
+  return payload;
 }
 
 async function runAction(discordUserId, action, actionToken) {
@@ -135,8 +151,9 @@ async function runAction(discordUserId, action, actionToken) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ actionToken })
   });
-  const payload = await response.json();
+  const payload = await readJsonSafely(response);
   if (response.status === 429) return { ok: false, cooldown: true, payload };
+  if (response.status === 409) return { ok: false, invalidToken: true, payload };
   if (!response.ok) throw new Error(payload.error || `API request failed: ${response.status}`);
   return { ok: true, payload };
 }
@@ -146,7 +163,7 @@ async function lockAction(discordUserId, action) {
     method: "POST",
     headers: { "Content-Type": "application/json" }
   });
-  const payload = await response.json();
+  const payload = await readJsonSafely(response);
   if (response.status === 429) return { ok: false, cooldown: true, payload };
   if (!response.ok) throw new Error(payload.error || `API request failed: ${response.status}`);
   return { ok: true, payload };
@@ -154,8 +171,16 @@ async function lockAction(discordUserId, action) {
 
 async function fetchActionMeta() {
   const response = await fetch(`${API_BASE_URL}/meta/actions`);
-  if (!response.ok) throw new Error(`API request failed: ${response.status}`);
-  return response.json();
+  const payload = await readJsonSafely(response);
+  if (!response.ok) throw new Error(payload.error || `API request failed: ${response.status}`);
+  return payload;
+}
+
+async function fetchPublicMeta() {
+  const response = await fetch(`${API_BASE_URL}/meta/public`);
+  const payload = await readJsonSafely(response);
+  if (!response.ok) throw new Error(payload.error || `API request failed: ${response.status}`);
+  return payload;
 }
 
 function profileEmbed(userName, profile) {
@@ -174,7 +199,7 @@ function profileEmbed(userName, profile) {
     .addFields(
       { name: "Money", value: `$${profile.money}`, inline: true },
       { name: "Level", value: `${profile.level}`, inline: true },
-      { name: "XP", value: `${lifetimeXp}`, inline: true },
+      { name: "Lifetime XP", value: `${lifetimeXp}`, inline: true },
       { name: "Total Earned", value: `$${profile.totalMoneyEarned}`, inline: true },
       { name: "Trophies", value: `${digEmoji} ${fishEmoji} ${huntEmoji}`, inline: true },
       { name: "Commands Used", value: `${profile.totalCommandsUsed}`, inline: true },
@@ -185,6 +210,7 @@ function profileEmbed(userName, profile) {
 }
 
 async function handleStart(interaction) {
+  await interaction.deferReply({ ephemeral: true });
   const payload = await registerAccount(interaction.user);
   const actionText = payload.created ? "created" : "already exists";
   const embed = new EmbedBuilder()
@@ -196,41 +222,43 @@ async function handleStart(interaction) {
       { name: "Level", value: `${payload.player.level}`, inline: true },
       { name: "Created", value: formatDate(payload.player.createdAt), inline: true }
     );
-  await interaction.reply({ embeds: [embed], ephemeral: true });
+  await interaction.editReply({ embeds: [embed] });
 }
 
 async function handleProfile(interaction) {
+  await interaction.deferReply();
   const profile = await fetchProfile(interaction.user.id);
   if (!profile) {
-    await interaction.reply({
+    await interaction.editReply({
       embeds: [
         new EmbedBuilder()
           .setTitle("Profile Not Found")
           .setColor(0xffa500)
           .setDescription("Run `/start` or log in on the website first.")
       ],
-      ephemeral: true
+      components: []
     });
     return;
   }
-  await interaction.reply({ embeds: [profileEmbed(interaction.user.username, profile)] });
+  await interaction.editReply({ embeds: [profileEmbed(interaction.user.username, profile)] });
 }
 
 async function handleWallet(interaction) {
+  await interaction.deferReply({ ephemeral: true });
   const profile = await fetchProfile(interaction.user.id);
   if (!profile) {
-    await interaction.reply({
+    await interaction.editReply({
       embeds: [
         new EmbedBuilder()
           .setTitle("Wallet Not Found")
           .setColor(0xffa500)
           .setDescription("Run `/start` first.")
       ],
-      ephemeral: true
+      components: []
     });
     return;
   }
-  await interaction.reply({
+  await interaction.editReply({
     embeds: [
       new EmbedBuilder()
         .setTitle("Wallet")
@@ -253,7 +281,35 @@ async function handleWallet(interaction) {
           }
         )
     ],
-    ephemeral: true
+  });
+}
+
+async function handlePlay(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+
+  let playUrl = WEB_PLAY_URL;
+  try {
+    const meta = await fetchPublicMeta();
+    if (typeof meta.webPlayUrl === "string" && meta.webPlayUrl) {
+      playUrl = meta.webPlayUrl;
+    }
+  } catch (_err) {
+    // Fall back to env URL if /meta/public is unavailable.
+  }
+
+  if (!playUrl) {
+    throw new Error("Website URL is not configured yet.");
+  }
+
+  await interaction.editReply({
+    embeds: [
+      new EmbedBuilder()
+        .setTitle("Play On Website")
+        .setColor(0x5865f2)
+        .setDescription(
+          `Open: ${playUrl}\n\nSign in with Discord there, then your progress stays synced with bot commands.`
+        )
+    ]
   });
 }
 
@@ -314,45 +370,53 @@ async function handleActionGame(interaction, actionKey) {
     filter: (i) => i.customId === customId
   });
 
+  let collectorError = null;
   const completed = await new Promise((resolve) => {
-    collector.on("collect", async (buttonInteraction) => {
-      if (buttonInteraction.user.id !== interaction.user.id) {
-        await buttonInteraction.reply({
-          content: "Only the command user can play this minigame.",
-          ephemeral: true
-        });
-        return;
-      }
+    collector.on("collect", (buttonInteraction) => {
+      void (async () => {
+        if (buttonInteraction.user.id !== interaction.user.id) {
+          await buttonInteraction.reply({
+            content: "Only the command user can play this minigame.",
+            ephemeral: true
+          });
+          return;
+        }
 
-      clicks += 1;
-      if (clicks >= requiredClicks) {
-        collector.stop("completed");
+        clicks += 1;
+        if (clicks >= requiredClicks) {
+          collector.stop("completed");
+          await buttonInteraction.update({
+            embeds: [
+              new EmbedBuilder()
+                .setTitle(action.title)
+                .setColor(0x22c55e)
+                .setDescription("Minigame complete. Applying reward...")
+            ],
+            components: []
+          });
+          return;
+        }
+
         await buttonInteraction.update({
           embeds: [
             new EmbedBuilder()
               .setTitle(action.title)
-              .setColor(0x22c55e)
-              .setDescription("Minigame complete. Applying reward...")
+              .setColor(0x5865f2)
+              .setDescription(`Click the button ${requiredClicks} times in 10 seconds.`)
+              .addFields({ name: "Progress", value: `${clicks}/${requiredClicks}` })
           ],
-          components: []
+          components: [row]
         });
-        return;
-      }
-
-      await buttonInteraction.update({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle(action.title)
-            .setColor(0x5865f2)
-            .setDescription(`Click the button ${requiredClicks} times in 10 seconds.`)
-            .addFields({ name: "Progress", value: `${clicks}/${requiredClicks}` })
-        ],
-        components: [row]
+      })().catch((err) => {
+        collectorError = err;
+        collector.stop("error");
       });
     });
 
     collector.on("end", (_c, reason) => resolve(reason === "completed"));
   });
+
+  if (collectorError) throw collectorError;
 
   if (!completed) {
     await interaction.editReply({
@@ -368,7 +432,32 @@ async function handleActionGame(interaction, actionKey) {
   }
 
   const result = await runAction(interaction.user.id, actionKey, actionToken);
-  if (!result.ok && result.cooldown) return;
+  if (!result.ok && result.cooldown) {
+    await interaction.editReply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle(`${action.label} Cooldown`)
+          .setColor(0xffa500)
+          .setDescription(
+            `Cooldown active: ${formatSeconds(result.payload.cooldownRemainingMs || 0)}s remaining.`
+          )
+      ],
+      components: []
+    });
+    return;
+  }
+  if (!result.ok && result.invalidToken) {
+    await interaction.editReply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle(`${action.label} Expired`)
+          .setColor(0xed4245)
+          .setDescription("Your action session expired. Run the command again.")
+      ],
+      components: []
+    });
+    return;
+  }
 
   await interaction.editReply({
     embeds: [
@@ -406,18 +495,19 @@ async function handleActionGame(interaction, actionKey) {
 }
 
 async function handleLootTable(interaction) {
+  await interaction.deferReply({ ephemeral: true });
   const action = interaction.options.getString("action", true);
   const metadata = await fetchActionMeta();
   const actionConfig = metadata?.actions?.[action];
   if (!actionConfig) {
-    await interaction.reply({
+    await interaction.editReply({
       embeds: [
         new EmbedBuilder()
           .setTitle("Loot Table Error")
           .setColor(0xed4245)
           .setDescription("Could not load action metadata.")
       ],
-      ephemeral: true
+      components: []
     });
     return;
   }
@@ -432,7 +522,7 @@ async function handleLootTable(interaction) {
     })
     .join("\n");
 
-  await interaction.reply({
+  await interaction.editReply({
     embeds: [
       new EmbedBuilder()
         .setTitle(`${titleCase(action)} Loot Table`)
@@ -444,7 +534,6 @@ async function handleLootTable(interaction) {
         )
         .setFooter({ text: "Bot commands yield 5% more cash." })
     ],
-    ephemeral: true
   });
 }
 
@@ -463,6 +552,7 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.commandName === "start") return await handleStart(interaction);
     if (interaction.commandName === "profile") return await handleProfile(interaction);
     if (interaction.commandName === "wallet") return await handleWallet(interaction);
+    if (interaction.commandName === "play") return await handlePlay(interaction);
     if (interaction.commandName === "dig") return await handleActionGame(interaction, "dig");
     if (interaction.commandName === "fish") return await handleActionGame(interaction, "fish");
     if (interaction.commandName === "hunt") return await handleActionGame(interaction, "hunt");
@@ -488,6 +578,14 @@ client.on("interactionCreate", async (interaction) => {
 
 client.on("error", (err) => {
   console.error("Discord client error:", err);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err);
 });
 
 client.login(DISCORD_TOKEN);

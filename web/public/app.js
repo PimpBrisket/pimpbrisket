@@ -4,11 +4,23 @@ const result = document.getElementById("result");
 let apiBaseUrl = "https://pimpbrisket.onrender.com";
 
 function showResult(message) {
+  if (!result) return;
   result.textContent = message;
 }
 
 function setLoginHref() {
+  if (!loginButton) return;
   loginButton.href = `${apiBaseUrl}/auth/discord/login`;
+}
+
+async function readJsonSafely(response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch (_err) {
+    return {};
+  }
 }
 
 async function loadConfig() {
@@ -19,7 +31,7 @@ async function loadConfig() {
   try {
     const response = await fetch("/config", { signal: controller.signal });
     if (!response.ok) return;
-    const config = await response.json();
+    const config = await readJsonSafely(response);
     if (config.apiBaseUrl) apiBaseUrl = config.apiBaseUrl;
   } catch (_err) {
     // Keep local default.
@@ -45,4 +57,6 @@ async function init() {
   handleAuthError();
 }
 
-init();
+init().catch(() => {
+  showResult("Could not initialize login.");
+});
