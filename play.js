@@ -160,11 +160,14 @@ function formatActionLabel(action) {
 
 function setDigAnimationVariant(bonusLabel) {
   if (!digAnimationImageEl) return;
-  let assetName = window.matchMedia("(max-width: 760px)").matches
-    ? "DugDugM.png"
-    : "DugDug.png";
-  if (bonusLabel === "Gold Coin") assetName = "DugDugCoin.png";
-  if (bonusLabel === "Da Bone") assetName = "DugDugBone.png";
+  const isMobile = window.matchMedia("(max-width: 760px)").matches;
+  let assetName = isMobile ? "DugDugM.png" : "DugDug.png";
+  if (bonusLabel === "Gold Coin") {
+    assetName = isMobile ? "DugDugCoinM.png" : "DugDugCoin.png";
+  }
+  if (bonusLabel === "Da Bone") {
+    assetName = isMobile ? "DugDugBoneM.png" : "DugDugBone.png";
+  }
   digAnimationVersion += 1;
   digAnimationImageEl.src = `./assets/${assetName}?v=${digAnimationVersion}`;
 }
