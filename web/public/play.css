@@ -276,6 +276,35 @@ body {
   font-weight: 700;
 }
 
+.dev-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.dev-row input {
+  background: #0f1d33;
+  border: 1px solid #4d6483;
+  color: #e5eefb;
+  border-radius: 8px;
+  padding: 7px 10px;
+  min-width: 120px;
+}
+
+.dev-textarea {
+  width: 100%;
+  min-height: 220px;
+  background: #0f1d33;
+  border: 1px solid #4d6483;
+  color: #e5eefb;
+  border-radius: 10px;
+  padding: 10px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.8rem;
+  margin-top: 8px;
+}
+
 .trophy-open {
   width: 100%;
   text-align: left;

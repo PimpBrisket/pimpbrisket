@@ -11,6 +11,10 @@ const {
   getPlayerByDiscordId,
   registerPlayer,
   adjustMoney,
+  getPlayerDevConfig,
+  setPlayerDevConfig,
+  resetPlayerDevConfig,
+  setPlayerLevel,
   lockActionCooldown,
   performAction,
   getActionConfig,
@@ -143,6 +147,7 @@ const RATE_LIMIT_MAX_ACTIONS_PER_USER = parsePositiveIntEnv(
   "RATE_LIMIT_MAX_ACTIONS_PER_USER",
   8
 );
+const DEV_OWNER_DISCORD_USER_ID = process.env.DEV_OWNER_DISCORD_USER_ID || "931015893377482854";
 const oauthStateStore = new Map();
 const actionLockTokenStore = new Map();
 
@@ -205,6 +210,10 @@ app.use((req, res, next) => {
 
 function isValidDiscordUserId(value) {
   return typeof value === "string" && /^\d{17,20}$/.test(value);
+}
+
+function isDevOwnerId(discordUserId) {
+  return discordUserId === DEV_OWNER_DISCORD_USER_ID;
 }
 
 function getDiscordAvatarUrl(discordUserId, avatarHash) {
@@ -471,6 +480,87 @@ app.post("/players/register", async (req, res) => {
       created,
       player: toPublicPlayer(player)
     });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/dev/:discordUserId/config", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+    if (!isDevOwnerId(discordUserId)) {
+      return res.status(403).json({ error: "Dev mode is not available for this user" });
+    }
+
+    const config = await getPlayerDevConfig(db, discordUserId);
+    return res.json({
+      ownerDiscordUserId: DEV_OWNER_DISCORD_USER_ID,
+      defaults: getActionMetadata(),
+      config
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/dev/:discordUserId/config", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+    if (!isDevOwnerId(discordUserId)) {
+      return res.status(403).json({ error: "Dev mode is not available for this user" });
+    }
+    const nextConfig = await setPlayerDevConfig(db, discordUserId, req.body?.config || {});
+    return res.json({ ok: true, config: nextConfig });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/dev/:discordUserId/reset", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+    if (!isDevOwnerId(discordUserId)) {
+      return res.status(403).json({ error: "Dev mode is not available for this user" });
+    }
+    await resetPlayerDevConfig(db, discordUserId);
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/dev/:discordUserId/level", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+    if (!isDevOwnerId(discordUserId)) {
+      return res.status(403).json({ error: "Dev mode is not available for this user" });
+    }
+    const level = Number(req.body?.level);
+    if (!Number.isFinite(level)) {
+      return res.status(400).json({ error: "level must be a number" });
+    }
+    const player = await setPlayerLevel(db, discordUserId, level);
+    return res.json({ ok: true, player: toPublicPlayer(player) });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

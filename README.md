@@ -31,6 +31,7 @@ Key API env vars:
 - `ALLOWED_ORIGIN` (local: `http://localhost:5173`)
 - `WEB_BASE_URL` (local: `http://localhost:5173`)
 - `WEB_PLAY_PATH` (local: `/play`)
+- `DEV_OWNER_DISCORD_USER_ID` (optional, default `931015893377482854`)
 - `DISCORD_CLIENT_ID`
 - `DISCORD_CLIENT_SECRET`
 - `DISCORD_REDIRECT_URI` (local: `http://localhost:3000/auth/discord/callback`)

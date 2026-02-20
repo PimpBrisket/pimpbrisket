@@ -92,9 +92,14 @@ const PLAYER_SELECT_SQL = `SELECT
   "fishTrophyCount",
   "huntTrophyCount",
   "discordUsername",
-  "discordAvatarHash"
+  "discordAvatarHash",
+  "devConfig"
  FROM players
  WHERE "discordUserId" = $1`;
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
 
 function xpRequiredForLevel(level) {
   if (level >= MAX_LEVEL) return 0;
@@ -153,7 +158,8 @@ async function initDatabase(db) {
     "fishTrophyCount" INTEGER NOT NULL DEFAULT 0,
     "huntTrophyCount" INTEGER NOT NULL DEFAULT 0,
     "discordUsername" TEXT,
-    "discordAvatarHash" TEXT
+    "discordAvatarHash" TEXT,
+    "devConfig" JSONB
   )`);
 
   const requiredColumns = [
@@ -169,12 +175,71 @@ async function initDatabase(db) {
     `"fishTrophyCount" INTEGER NOT NULL DEFAULT 0`,
     `"huntTrophyCount" INTEGER NOT NULL DEFAULT 0`,
     `"discordUsername" TEXT`,
-    `"discordAvatarHash" TEXT`
+    `"discordAvatarHash" TEXT`,
+    `"devConfig" JSONB`
   ];
 
   for (const colDef of requiredColumns) {
     await db.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS ${colDef}`);
   }
+}
+
+function sanitizeNumber(value, fallback) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function sanitizeActionOverride(defaultAction, override) {
+  const result = clone(defaultAction);
+  if (!override || typeof override !== "object") return result;
+
+  result.xpMin = Math.max(0, Math.floor(sanitizeNumber(override.xpMin, result.xpMin)));
+  result.xpMax = Math.max(result.xpMin, Math.floor(sanitizeNumber(override.xpMax, result.xpMax)));
+
+  if (Array.isArray(override.payoutTiers) && override.payoutTiers.length === result.payoutTiers.length) {
+    result.payoutTiers = result.payoutTiers.map((tier, index) => {
+      const source = override.payoutTiers[index] || {};
+      const min = Math.max(0, Math.floor(sanitizeNumber(source.min, tier.min)));
+      const max = Math.max(min, Math.floor(sanitizeNumber(source.max, tier.max)));
+      return {
+        ...tier,
+        chancePct: Math.max(0, sanitizeNumber(source.chancePct, tier.chancePct)),
+        min,
+        max
+      };
+    });
+  }
+
+  if (Array.isArray(override.bonusTiers) && override.bonusTiers.length === result.bonusTiers.length) {
+    result.bonusTiers = result.bonusTiers.map((tier, index) => {
+      const source = override.bonusTiers[index] || {};
+      return {
+        ...tier,
+        chancePct: Math.max(0, sanitizeNumber(source.chancePct, tier.chancePct)),
+        coins: Math.max(0, Math.floor(sanitizeNumber(source.coins, tier.coins)))
+      };
+    });
+  }
+
+  return result;
+}
+
+function sanitizeDevConfig(input) {
+  const output = { actions: {} };
+  if (!input || typeof input !== "object") return output;
+  const incomingActions = input.actions && typeof input.actions === "object" ? input.actions : {};
+  for (const actionKey of Object.keys(ACTIONS)) {
+    output.actions[actionKey] = sanitizeActionOverride(ACTIONS[actionKey], incomingActions[actionKey]);
+  }
+  return output;
+}
+
+function getEffectiveActionConfigForPlayer(player, action) {
+  const base = getActionConfig(action);
+  if (!base) return null;
+  const playerOverride = player?.devConfig?.actions?.[action];
+  if (!playerOverride) return base;
+  return sanitizeActionOverride(base, playerOverride);
 }
 
 async function registerPlayer(db, discordUserId, profile = null) {
@@ -217,6 +282,55 @@ async function adjustMoney(db, discordUserId, amount) {
     [amount, discordUserId]
   );
 
+  return getPlayerByDiscordId(db, discordUserId);
+}
+
+async function getPlayerDevConfig(db, discordUserId) {
+  const result = await db.query(
+    `SELECT "devConfig" FROM players WHERE "discordUserId" = $1`,
+    [discordUserId]
+  );
+  if (!result.rows[0]) return sanitizeDevConfig({});
+  return sanitizeDevConfig(result.rows[0].devConfig || {});
+}
+
+async function setPlayerDevConfig(db, discordUserId, config) {
+  const sanitized = sanitizeDevConfig(config);
+  await db.query(
+    `INSERT INTO players ("discordUserId", money, "devConfig")
+     VALUES ($1, 0, $2::jsonb)
+     ON CONFLICT ("discordUserId")
+     DO UPDATE SET "devConfig" = $2::jsonb, "updatedAt" = NOW()`,
+    [discordUserId, JSON.stringify(sanitized)]
+  );
+  return sanitized;
+}
+
+async function resetPlayerDevConfig(db, discordUserId) {
+  await db.query(
+    `UPDATE players
+     SET "devConfig" = NULL, "updatedAt" = NOW()
+     WHERE "discordUserId" = $1`,
+    [discordUserId]
+  );
+}
+
+async function setPlayerLevel(db, discordUserId, level) {
+  const clampedLevel = Math.min(MAX_LEVEL, Math.max(1, Math.floor(Number(level) || 1)));
+  await db.query(
+    `INSERT INTO players ("discordUserId", money)
+     VALUES ($1, 0)
+     ON CONFLICT ("discordUserId") DO NOTHING`,
+    [discordUserId]
+  );
+  await db.query(
+    `UPDATE players
+     SET level = $1,
+         xp = 0,
+         "updatedAt" = NOW()
+     WHERE "discordUserId" = $2`,
+    [clampedLevel, discordUserId]
+  );
   return getPlayerByDiscordId(db, discordUserId);
 }
 
@@ -309,8 +423,8 @@ async function lockActionCooldown(db, discordUserId, action) {
 }
 
 async function performAction(db, discordUserId, action, options = {}) {
-  const actionConfig = getActionConfig(action);
-  if (!actionConfig) throw new Error("Unsupported action");
+  const baseActionConfig = getActionConfig(action);
+  if (!baseActionConfig) throw new Error("Unsupported action");
 
   const {
     ignoreCooldown = false,
@@ -333,6 +447,7 @@ async function performAction(db, discordUserId, action, options = {}) {
       [discordUserId]
     );
     const playerBefore = currentPlayerResult.rows[0];
+    const actionConfig = getEffectiveActionConfigForPlayer(playerBefore, action);
 
     const now = Date.now();
     const cooldownUntil = Number(playerBefore[actionConfig.cooldownColumn]) || 0;
@@ -449,6 +564,10 @@ module.exports = {
   getPlayerByDiscordId,
   registerPlayer,
   adjustMoney,
+  getPlayerDevConfig,
+  setPlayerDevConfig,
+  resetPlayerDevConfig,
+  setPlayerLevel,
   lockActionCooldown,
   performAction,
   getActionConfig,
