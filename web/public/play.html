@@ -39,6 +39,16 @@
             Revert to originals
           </button>
         </div>
+
+        <div class="loot-nav">
+          <button id="shop-button" class="loot-nav-button" type="button">Shop</button>
+          <button id="menu-button" class="loot-nav-button" type="button">Menu</button>
+        </div>
+        <div id="mode-menu" class="mode-menu" hidden>
+          <p class="mode-menu-label">Choose your game section</p>
+          <button id="mode-actions-button" class="mode-menu-option" type="button">Dig / Fish / Hunt</button>
+          <button id="mode-gambling-button" class="mode-menu-option" type="button">Gambling</button>
+        </div>
       </aside>
 
       <section class="main-column">
@@ -58,7 +68,7 @@
             </div>
           </div>
 
-          <h1>Action Center</h1>
+          <h1 id="main-title">Action Center</h1>
           <p id="status">Loading profile...</p>
 
           <div class="level-row">
@@ -179,7 +189,7 @@
           </div>
         </section>
 
-        <section class="actions">
+        <section id="regular-actions" class="actions">
           <button class="action-card" data-action="dig" type="button">
             <img class="action-icon" src="./assets/dig.png" alt="Dig icon" />
             <span class="label">Dig</span>
@@ -194,7 +204,19 @@
           </button>
         </section>
 
-        <section class="panel stage-wrap">
+        <section id="gambling-actions" class="actions" hidden>
+          <button class="action-card gambling-action-card" data-gamble-game="coinflip" type="button">
+            <span class="label">Coinflip</span>
+          </button>
+          <button class="action-card gambling-action-card" data-gamble-game="blackjack" type="button">
+            <span class="label">Blackjack</span>
+          </button>
+          <button class="action-card gambling-action-card" data-gamble-game="slots" type="button">
+            <span class="label">Slots</span>
+          </button>
+        </section>
+
+        <section id="action-stage" class="panel stage-wrap">
           <div id="anim-dig" class="scene dig" hidden>
             <img id="anim-dig-image" class="scene-gif" src="./assets/DugDug.png?v=4" alt="Dig animation" />
           </div>
@@ -235,12 +257,70 @@
           </div>
         </section>
 
+        <section id="gambling-panel" class="panel gambling-panel" hidden>
+          <div class="gambling-grid">
+            <div class="gambling-main">
+              <h2 id="gambling-title">Gambling Hall</h2>
+              <p id="gambling-status" class="muted">Choose Coinflip, Blackjack, or Slots.</p>
+
+              <div id="coinflip-controls" class="game-controls" hidden>
+                <button id="coinflip-heads-button" class="close-profile" type="button">Call Heads</button>
+                <button id="coinflip-tails-button" class="close-profile" type="button">Call Tails</button>
+              </div>
+
+              <div id="blackjack-controls" class="game-controls" hidden>
+                <button id="blackjack-deal-button" class="close-profile" type="button">Deal</button>
+                <button id="blackjack-hit-button" class="close-profile" type="button" hidden>Hit</button>
+                <button id="blackjack-stand-button" class="close-profile" type="button" hidden>Stand</button>
+              </div>
+
+              <div id="slots-controls" class="game-controls" hidden>
+                <button id="slots-spin-button" class="close-profile" type="button">Spin</button>
+              </div>
+
+              <div class="gambling-result">
+                <p class="k">Result</p>
+                <p id="gambling-result-text" class="v">No bet placed yet.</p>
+              </div>
+            </div>
+
+            <aside class="risk-sidebar">
+              <h3>Risk Mode</h3>
+              <div class="bet-input-wrap">
+                <label for="bet-amount-input">Bet Amount</label>
+                <input
+                  id="bet-amount-input"
+                  type="text"
+                  inputmode="decimal"
+                  placeholder="ex: 100000, 100,000, 100k"
+                  maxlength="20"
+                />
+                <p id="bet-parsed-display" class="muted">Parsed bet: $0 (Max: $1,000,000)</p>
+              </div>
+
+              <div class="risk-slider-wrap">
+                <label for="risk-slider">Risk</label>
+                <input id="risk-slider" type="range" min="0" max="99" step="1" value="0" />
+                <div class="risk-marks" aria-hidden="true">
+                  <span>0%</span>
+                  <span>25%</span>
+                  <span>50%</span>
+                  <span>75%</span>
+                  <span>99%</span>
+                </div>
+                <p id="risk-current" class="risk-current">Current Risk: 0%</p>
+                <p id="risk-reward" class="risk-reward">Reward Increase: +0%</p>
+              </div>
+            </aside>
+          </div>
+        </section>
+
         <section class="panel wallet">
           <p class="wallet-label">Wallet</p>
           <p id="wallet-amount">$0</p>
         </section>
       </section>
     </main>
-    <script src="./play.js?v=8"></script>
+    <script src="./play.js?v=9"></script>
   </body>
 </html>
