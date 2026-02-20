@@ -96,6 +96,7 @@ body {
   border-bottom: 1px solid rgba(130, 151, 177, 0.3);
   padding: 7px 4px;
   text-align: left;
+  vertical-align: top;
 }
 
 .chance-table th:last-child,
@@ -104,13 +105,31 @@ body {
 }
 
 .chance-input {
-  width: 70px;
+  width: 58px;
   background: #0f1d33;
   border: 1px solid #4d6483;
   color: #e5eefb;
   border-radius: 6px;
-  padding: 4px 6px;
-  margin-left: 4px;
+  padding: 3px 5px;
+  margin-left: 0;
+  font-size: 0.78rem;
+}
+
+.chance-edit-label {
+  font-size: 0.78rem;
+  color: #dbe7f8;
+  margin-bottom: 4px;
+}
+
+.chance-edit-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.chance-edit-right {
+  width: 66px;
 }
 
 .dev-loot-controls {

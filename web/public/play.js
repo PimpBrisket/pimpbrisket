@@ -389,10 +389,20 @@ function renderDevEditableChanceTable(action) {
       queueDevConfigSave();
     });
 
-    leftCell.textContent = `${tier.label} `;
-    leftCell.appendChild(minInput);
-    leftCell.appendChild(document.createTextNode(" - "));
-    leftCell.appendChild(maxInput);
+    const labelEl = document.createElement("div");
+    labelEl.className = "chance-edit-label";
+    labelEl.textContent = tier.label;
+
+    const rangeWrap = document.createElement("div");
+    rangeWrap.className = "chance-edit-range";
+    rangeWrap.appendChild(minInput);
+    rangeWrap.appendChild(document.createTextNode(" - "));
+    rangeWrap.appendChild(maxInput);
+
+    leftCell.appendChild(labelEl);
+    leftCell.appendChild(rangeWrap);
+
+    rightCell.className = "chance-edit-right";
     rightCell.appendChild(chanceInput);
     tr.appendChild(leftCell);
     tr.appendChild(rightCell);
@@ -404,7 +414,10 @@ function renderDevEditableChanceTable(action) {
     const leftCell = document.createElement("td");
     const rightCell = document.createElement("td");
 
-    leftCell.textContent = tier.label;
+    const labelEl = document.createElement("div");
+    labelEl.className = "chance-edit-label";
+    labelEl.textContent = tier.label;
+    leftCell.appendChild(labelEl);
     if (tier.coins > 0) {
       const coinsInput = document.createElement("input");
       coinsInput.type = "number";
@@ -414,8 +427,11 @@ function renderDevEditableChanceTable(action) {
         tier.coins = Math.max(0, Number(coinsInput.value || 0));
         queueDevConfigSave();
       });
-      leftCell.appendChild(document.createTextNode(" +$"));
-      leftCell.appendChild(coinsInput);
+      const coinsWrap = document.createElement("div");
+      coinsWrap.className = "chance-edit-range";
+      coinsWrap.appendChild(document.createTextNode("+$"));
+      coinsWrap.appendChild(coinsInput);
+      leftCell.appendChild(coinsWrap);
     }
 
     const chanceInput = document.createElement("input");
@@ -427,6 +443,7 @@ function renderDevEditableChanceTable(action) {
       tier.chancePct = Math.max(0, Number(chanceInput.value || 0));
       queueDevConfigSave();
     });
+    rightCell.className = "chance-edit-right";
     rightCell.appendChild(chanceInput);
 
     tr.appendChild(leftCell);
