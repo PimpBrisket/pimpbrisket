@@ -65,6 +65,7 @@ const devResetConfigButton = document.getElementById("dev-reset-config-button");
 const devLootControls = document.getElementById("dev-loot-controls");
 const devMoneyInput = document.getElementById("dev-money-input");
 const devSetMoneyButton = document.getElementById("dev-set-money-button");
+const devResetMoneyButton = document.getElementById("dev-reset-money-button");
 const devFreezeMoneyToggle = document.getElementById("dev-freeze-money-toggle");
 const devActionTools = document.getElementById("dev-action-tools");
 const devGamblingTools = document.getElementById("dev-gambling-tools");
@@ -496,7 +497,7 @@ function formatShowcaseEffectText(item) {
 function buildInventoryShowcaseMeta(item) {
   const effectText = formatShowcaseEffectText(item);
   if (effectText === "No showcase effect") return effectText;
-  return `Showcase effect (only when showcased): ${effectText}`;
+  return `Showcased effect: ${effectText}`;
 }
 
 function renderInventoryPanel() {
@@ -2512,6 +2513,17 @@ function bindUserMenu() {
           setStatus("Money updated.", "tone-success");
         } catch (err) {
           setStatus(err.message || "Could not set money.", "tone-error");
+        }
+      });
+    }
+    if (devResetMoneyButton) {
+      devResetMoneyButton.addEventListener("click", async () => {
+        try {
+          await setDevMoneyValue(0);
+          if (devMoneyInput) devMoneyInput.value = "0";
+          setStatus("Money reset to $0.", "tone-success");
+        } catch (err) {
+          setStatus(err.message || "Could not reset money.", "tone-error");
         }
       });
     }
