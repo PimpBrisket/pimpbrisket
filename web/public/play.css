@@ -485,10 +485,6 @@ body.profile-focus #profile-panel {
   font-weight: 700;
 }
 
-#shop-status {
-  display: none;
-}
-
 .profile-showcase-items {
   margin-top: 10px;
   display: grid;
