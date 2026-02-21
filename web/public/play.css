@@ -266,36 +266,10 @@ body {
   place-items: center;
 }
 
-.backpack-icon {
-  position: relative;
-  width: 24px;
-  height: 20px;
-  border: 2px solid #8ea8cb;
-  border-radius: 6px;
-  background: #1d3252;
-}
-
-.backpack-icon::before {
-  content: "";
-  position: absolute;
-  left: 5px;
-  top: -8px;
-  width: 10px;
-  height: 8px;
-  border: 2px solid #8ea8cb;
-  border-bottom: 0;
-  border-radius: 6px 6px 0 0;
-}
-
-.backpack-icon::after {
-  content: "";
-  position: absolute;
-  left: 8px;
-  top: 6px;
-  width: 6px;
-  height: 6px;
-  border-radius: 2px;
-  background: #cbdcf6;
+.inventory-icon {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
 }
 
 .user-corner {
@@ -408,6 +382,32 @@ body {
   color: #e5eefb;
   border-radius: 8px;
   padding: 7px 10px;
+}
+
+body.profile-focus .chance-panel,
+body.profile-focus .top,
+body.profile-focus #daily-panel,
+body.profile-focus #achievements-panel,
+body.profile-focus #inventory-panel,
+body.profile-focus #upgrade-panel,
+body.profile-focus #shop-panel,
+body.profile-focus #showcase-panel,
+body.profile-focus #dev-panel,
+body.profile-focus #trophy-panel,
+body.profile-focus #regular-actions,
+body.profile-focus #gambling-actions,
+body.profile-focus #action-stage,
+body.profile-focus #gambling-panel,
+body.profile-focus .wallet {
+  display: none !important;
+}
+
+body.profile-focus .page-layout {
+  grid-template-columns: 1fr;
+}
+
+body.profile-focus #profile-panel {
+  display: block !important;
 }
 
 .profile-panel {

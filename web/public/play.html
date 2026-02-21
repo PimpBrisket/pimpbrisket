@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Player Portal | Actions</title>
-    <link rel="stylesheet" href="./play.css?v=6" />
+    <link rel="stylesheet" href="./play.css?v=7" />
   </head>
   <body>
     <main class="page-layout">
@@ -55,7 +55,7 @@
         <header class="panel top">
           <div class="inventory-corner">
             <button id="open-inventory-button" class="inventory-button" type="button" aria-label="Open inventory">
-              <span class="backpack-icon" aria-hidden="true"></span>
+              <img id="inventory-icon" class="inventory-icon" src="./assets/Backpack.png" alt="Inventory" />
             </button>
           </div>
           <div class="user-corner">
@@ -133,6 +133,10 @@
             <article class="profile-card wide">
               <p class="k">Joined</p>
               <p id="profile-joined" class="v">-</p>
+            </article>
+            <article class="profile-card wide">
+              <p class="k">Current Showcase</p>
+              <p id="profile-showcase-summary" class="v">No showcase active</p>
             </article>
           </div>
         </section>
@@ -463,6 +467,6 @@
         </section>
       </section>
     </main>
-    <script src="./play.js?v=15"></script>
+    <script src="./play.js?v=16"></script>
   </body>
 </html>
