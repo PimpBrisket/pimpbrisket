@@ -27,6 +27,8 @@ const {
   buildAchievementProgress,
   buildDailyState,
   buildUpgradeSummary,
+  buildInventorySummary,
+  buildShowcaseSummary,
   setPlayerTimezone,
   getDailySummary,
   claimDailyReward,
@@ -34,7 +36,11 @@ const {
   getAchievementSummary,
   settleGamblingResult,
   purchaseUpgrade,
-  purchaseUpgradeMax
+  purchaseUpgradeMax,
+  sellInventoryItem,
+  purchaseShowcaseSlot,
+  setShowcasedItems,
+  setPlayerUpgradeLevel
 } = require("./database");
 
 function parsePositiveIntEnv(name, fallback) {
@@ -259,6 +265,8 @@ function toPublicPlayer(player) {
   const dailyState = buildDailyState(player, now);
   const achievementState = buildAchievementProgress(player);
   const upgrades = buildUpgradeSummary(player);
+  const inventory = buildInventorySummary(player);
+  const showcase = buildShowcaseSummary(player);
 
   return {
     ...player,
@@ -270,19 +278,19 @@ function toPublicPlayer(player) {
     totalTrophies,
     trophyCollection: {
       dig: {
-        key: "dig_trophy",
+        key: "collectors_greed",
         name: "Collectors Greed",
         image: "/assets/dig-trophy.png",
         count: digTrophyCount
       },
       fish: {
-        key: "fish_trophy",
+        key: "midnight_ocean",
         name: "Midnight Ocean",
         image: "/assets/fish-trophy.png",
         count: fishTrophyCount
       },
       hunt: {
-        key: "hunt_trophy",
+        key: "many_heads",
         name: "Many Heads",
         image: "/assets/hunt-trophy.png",
         count: huntTrophyCount
@@ -300,6 +308,10 @@ function toPublicPlayer(player) {
     },
     achievements: achievementState,
     upgrades,
+    inventory: {
+      items: inventory
+    },
+    showcase,
     dev: {
       freezeMoney: Boolean(player.devConfig?.freezeMoney)
     },
@@ -629,6 +641,71 @@ app.get("/players/:discordUserId", async (req, res) => {
   }
 });
 
+app.put("/dev/:discordUserId/upgrades/:action/:upgradeKey", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    const action = req.params.action;
+    const upgradeKey = req.params.upgradeKey;
+    const level = Number(req.body?.level);
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+    if (!isDevOwnerId(discordUserId)) {
+      return res.status(403).json({ error: "Dev mode is not available for this user" });
+    }
+    if (!Number.isFinite(level)) {
+      return res.status(400).json({ error: "level must be a number" });
+    }
+    const result = await setPlayerUpgradeLevel(db, discordUserId, action, upgradeKey, level);
+    return res.json({
+      ok: true,
+      upgrades: result.upgrades,
+      player: toPublicPlayer(result.player)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/dev/:discordUserId/actions/:action/trigger", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    const action = req.params.action;
+    const rewardLabel =
+      typeof req.body?.rewardLabel === "string" ? req.body.rewardLabel.trim() : "";
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+    if (!isDevOwnerId(discordUserId)) {
+      return res.status(403).json({ error: "Dev mode is not available for this user" });
+    }
+    if (!getActionConfig(action)) {
+      return res.status(400).json({ error: "action must be one of: dig, fish, hunt" });
+    }
+
+    const result = await performAction(db, discordUserId, action, {
+      ignoreCooldown: true,
+      preserveExistingCooldown: true,
+      forcePayoutLabel: rewardLabel || null,
+      forceBonusLabel: rewardLabel || null
+    });
+
+    return res.json({
+      ok: true,
+      action,
+      reward: result.reward.totalCoins,
+      rewardBreakdown: result.reward,
+      player: toPublicPlayer(result.player)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.post("/dev/:discordUserId/money", async (req, res) => {
   try {
     const discordUserId = req.params.discordUserId;
@@ -790,6 +867,107 @@ app.get("/players/:discordUserId/achievements", async (req, res) => {
     const summary = await getAchievementSummary(db, discordUserId);
     if (!summary) return res.status(404).json({ error: "Player not found" });
     return res.json(summary);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/players/:discordUserId/inventory", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+    const player = await getPlayerByDiscordId(db, discordUserId);
+    if (!player) return res.status(404).json({ error: "Player not found" });
+    const publicPlayer = toPublicPlayer(player);
+    return res.json({
+      player: publicPlayer,
+      inventory: publicPlayer.inventory,
+      showcase: publicPlayer.showcase
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/players/:discordUserId/inventory/sell", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    const itemKey = typeof req.body?.itemKey === "string" ? req.body.itemKey.trim() : "";
+    const quantity = req.body?.quantity;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+    if (!itemKey) {
+      return res.status(400).json({ error: "itemKey is required" });
+    }
+
+    const result = await sellInventoryItem(db, discordUserId, itemKey, quantity);
+    if (!result.ok) {
+      return res.status(409).json({
+        error: result.error || "Could not sell item",
+        player: toPublicPlayer(result.player)
+      });
+    }
+
+    return res.json({
+      ok: true,
+      soldQuantity: result.soldQuantity,
+      coinsEarned: result.coinsEarned,
+      player: toPublicPlayer(result.player)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/players/:discordUserId/shop/showcase-slot", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+
+    const result = await purchaseShowcaseSlot(db, discordUserId);
+    if (!result.ok) {
+      return res.status(409).json({
+        error: result.error || "Could not purchase showcase slot",
+        cost: result.cost || 0,
+        player: toPublicPlayer(result.player)
+      });
+    }
+    return res.json({
+      ok: true,
+      cost: result.cost,
+      player: toPublicPlayer(result.player)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/players/:discordUserId/showcase", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    const itemKeys = Array.isArray(req.body?.itemKeys) ? req.body.itemKeys : [];
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+
+    const result = await setShowcasedItems(db, discordUserId, itemKeys);
+    return res.json({
+      ok: true,
+      player: toPublicPlayer(result.player)
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

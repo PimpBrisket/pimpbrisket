@@ -21,13 +21,27 @@ const dailyChallengeStatusEl = document.getElementById("daily-challenge-status")
 const dailyChallengeDetailEl = document.getElementById("daily-challenge-detail");
 const claimDailyChallengeButton = document.getElementById("claim-daily-challenge-button");
 const openAchievementsButton = document.getElementById("open-achievements-button");
+const openShowcaseButton = document.getElementById("open-showcase-button");
 const achievementsPanel = document.getElementById("achievements-panel");
 const closeAchievementsButton = document.getElementById("close-achievements-button");
 const achievementsListEl = document.getElementById("achievements-list");
+const openInventoryButton = document.getElementById("open-inventory-button");
+const inventoryPanel = document.getElementById("inventory-panel");
+const closeInventoryButton = document.getElementById("close-inventory-button");
+const inventoryListEl = document.getElementById("inventory-list");
 const openUpgradeButton = document.getElementById("open-upgrade-button");
 const upgradePanel = document.getElementById("upgrade-panel");
 const closeUpgradeButton = document.getElementById("close-upgrade-button");
 const upgradesListEl = document.getElementById("upgrades-list");
+const shopPanel = document.getElementById("shop-panel");
+const closeShopButton = document.getElementById("close-shop-button");
+const shopStatusEl = document.getElementById("shop-status");
+const shopBuyShowcaseButton = document.getElementById("shop-buy-showcase-button");
+const showcasePanel = document.getElementById("showcase-panel");
+const closeShowcaseButton = document.getElementById("close-showcase-button");
+const showcaseSummaryEl = document.getElementById("showcase-summary");
+const showcaseSlotsEl = document.getElementById("showcase-slots");
+const saveShowcaseButton = document.getElementById("save-showcase-button");
 const openTrophiesButton = document.getElementById("open-trophies-button");
 const trophyPanel = document.getElementById("trophy-panel");
 const closeTrophiesButton = document.getElementById("close-trophies-button");
@@ -43,6 +57,10 @@ const devTriggerHuntButton = document.getElementById("dev-trigger-hunt-button");
 const devTriggerDigSelect = document.getElementById("dev-trigger-dig-select");
 const devTriggerFishSelect = document.getElementById("dev-trigger-fish-select");
 const devTriggerHuntSelect = document.getElementById("dev-trigger-hunt-select");
+const devUpgradeActionSelect = document.getElementById("dev-upgrade-action-select");
+const devUpgradeKeySelect = document.getElementById("dev-upgrade-key-select");
+const devUpgradeLevelInput = document.getElementById("dev-upgrade-level-input");
+const devSetUpgradeLevelButton = document.getElementById("dev-set-upgrade-level-button");
 const devResetConfigButton = document.getElementById("dev-reset-config-button");
 const devLootControls = document.getElementById("dev-loot-controls");
 const devMoneyInput = document.getElementById("dev-money-input");
@@ -134,13 +152,25 @@ const FALLBACK_META = {
       ],
       bonusTiers: [
         { chancePct: 87, coins: 0, label: "No extra drop", itemKey: null, itemImage: null },
-        { chancePct: 10, coins: 8, label: "Gold Coin" },
-        { chancePct: 2, coins: 20, label: "Da Bone" },
+        {
+          chancePct: 11,
+          coins: 15,
+          label: "Gold Coin",
+          itemKey: "gold_coin",
+          itemImage: "/assets/Gold%20coin.png"
+        },
+        {
+          chancePct: 3,
+          coins: 35,
+          label: "Da Bone",
+          itemKey: "da_bone",
+          itemImage: "/assets/Da%20bone.png"
+        },
         {
           chancePct: 1,
-          coins: 45,
+          coins: 75,
           label: "Collectors Greed",
-          itemKey: "dig_trophy",
+          itemKey: "collectors_greed",
           itemImage: "/assets/dig-trophy.png"
         }
       ]
@@ -155,14 +185,26 @@ const FALLBACK_META = {
         { chancePct: 5, min: 39, max: 58, label: "Legend Catch" }
       ],
       bonusTiers: [
-        { chancePct: 85, coins: 0, label: "No extra drop", itemKey: null, itemImage: null },
-        { chancePct: 11, coins: 10, label: "Treasure Scale" },
-        { chancePct: 3, coins: 24, label: "Ancient Chest Key" },
+        { chancePct: 87, coins: 0, label: "No extra drop", itemKey: null, itemImage: null },
+        {
+          chancePct: 11,
+          coins: 15,
+          label: "Treasure Scale",
+          itemKey: "treasure_scale",
+          itemImage: "/assets/null_trophy.png"
+        },
+        {
+          chancePct: 3,
+          coins: 35,
+          label: "Ancient Chest Key",
+          itemKey: "ancient_chest_key",
+          itemImage: "/assets/null_trophy.png"
+        },
         {
           chancePct: 1,
-          coins: 45,
+          coins: 75,
           label: "Midnight Ocean",
-          itemKey: "fish_trophy",
+          itemKey: "midnight_ocean",
           itemImage: "/assets/fish-trophy.png"
         }
       ]
@@ -177,14 +219,26 @@ const FALLBACK_META = {
         { chancePct: 5, min: 47, max: 68, label: "Elite Trophy" }
       ],
       bonusTiers: [
-        { chancePct: 84, coins: 0, label: "No extra drop", itemKey: null, itemImage: null },
-        { chancePct: 12, coins: 12, label: "Pelt Bonus" },
-        { chancePct: 3, coins: 30, label: "Rare Antler Set" },
+        { chancePct: 87, coins: 0, label: "No extra drop", itemKey: null, itemImage: null },
+        {
+          chancePct: 11,
+          coins: 15,
+          label: "Pelt Bonus",
+          itemKey: "pelt_bonus",
+          itemImage: "/assets/null_trophy.png"
+        },
+        {
+          chancePct: 3,
+          coins: 35,
+          label: "Rare Antler Set",
+          itemKey: "rare_antler_set",
+          itemImage: "/assets/null_trophy.png"
+        },
         {
           chancePct: 1,
-          coins: 45,
+          coins: 75,
           label: "Many Heads",
-          itemKey: "hunt_trophy",
+          itemKey: "many_heads",
           itemImage: "/assets/hunt-trophy.png"
         }
       ]
@@ -330,35 +384,51 @@ function getDisplayActionConfig(action) {
   const base = actionMeta?.actions?.[action];
   if (!base) return null;
   const config = cloneActionConfig(base);
-  const effects = currentProfile?.upgrades?.[action]?.effects || {
+  const upgradeEffects = currentProfile?.upgrades?.[action]?.effects || {
     cashMultiplier: 1,
     xpMultiplier: 1,
     dropReductionFactor: 0
   };
+  const showcaseEffects = currentProfile?.showcase?.effectsByAction?.[action] || {
+    cashMultiplier: 1,
+    xpMultiplier: 1,
+    cashPct: 0,
+    xpPct: 0
+  };
+  const combinedCashMultiplier =
+    Number(upgradeEffects.cashMultiplier || 1) * Number(showcaseEffects.cashMultiplier || 1);
+  const combinedXpMultiplier =
+    Number(upgradeEffects.xpMultiplier || 1) * Number(showcaseEffects.xpMultiplier || 1);
 
-  config.xpMin = Math.max(1, Math.round((Number(config.xpMin) || 0) * effects.xpMultiplier));
+  config.xpMin = Math.max(1, Math.round((Number(config.xpMin) || 0) * combinedXpMultiplier));
   config.xpMax = Math.max(
     config.xpMin,
-    Math.round((Number(config.xpMax) || config.xpMin) * effects.xpMultiplier)
+    Math.round((Number(config.xpMax) || config.xpMin) * combinedXpMultiplier)
   );
 
   config.payoutTiers = config.payoutTiers.map((tier) => ({
     ...tier,
-    min: Math.max(0, Math.round((Number(tier.min) || 0) * effects.cashMultiplier)),
+    min: Math.max(0, Math.round((Number(tier.min) || 0) * combinedCashMultiplier)),
     max: Math.max(
-      Math.round((Number(tier.min) || 0) * effects.cashMultiplier),
-      Math.round((Number(tier.max) || 0) * effects.cashMultiplier)
+      Math.round((Number(tier.min) || 0) * combinedCashMultiplier),
+      Math.round((Number(tier.max) || 0) * combinedCashMultiplier)
     )
   }));
 
   config.bonusTiers = config.bonusTiers.map((tier) => ({
     ...tier,
-    coins: Math.max(0, Math.round((Number(tier.coins) || 0) * effects.cashMultiplier))
+    coins: Math.max(0, Math.round((Number(tier.coins) || 0) * combinedCashMultiplier))
   }));
   config.bonusTiers = applyDropBoostToDisplayBonusTiers(
     config.bonusTiers,
-    Number(effects.dropReductionFactor || 0)
+    Number(upgradeEffects.dropReductionFactor || 0)
   );
+  config.boostSummary = {
+    cashPct: Math.round((combinedCashMultiplier - 1) * 100),
+    xpPct: Math.round((combinedXpMultiplier - 1) * 100),
+    showcaseCashPct: Math.round(Number(showcaseEffects.cashPct || 0)),
+    showcaseXpPct: Math.round(Number(showcaseEffects.xpPct || 0))
+  };
   return config;
 }
 
@@ -366,6 +436,161 @@ function formatChancePct(value) {
   const numeric = Number(value || 0);
   if (!Number.isFinite(numeric)) return "0";
   return numeric.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function updateShowcaseButtonVisibility() {
+  if (!openShowcaseButton) return;
+  openShowcaseButton.hidden = !(currentProfile?.showcase?.unlocked === true);
+}
+
+function formatShowcaseEffectText(item) {
+  if (!item?.showcase) return "No showcase effect";
+  const bits = [];
+  if (Number(item.showcase.cashPct || 0) > 0) {
+    bits.push(`+${item.showcase.cashPct}% ${formatActionLabel(item.showcase.action)} Coins`);
+  }
+  if (Number(item.showcase.xpPct || 0) > 0) {
+    bits.push(`+${item.showcase.xpPct}% ${formatActionLabel(item.showcase.action)} XP`);
+  }
+  return bits.join(" | ") || "No showcase effect";
+}
+
+function renderInventoryPanel() {
+  if (!inventoryListEl) return;
+  const items = Array.isArray(currentProfile?.inventory?.items) ? currentProfile.inventory.items : [];
+  inventoryListEl.innerHTML = "";
+  if (items.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "No items yet. Bonus drops will stack here.";
+    inventoryListEl.appendChild(empty);
+    return;
+  }
+
+  items.forEach((item) => {
+    const row = document.createElement("article");
+    row.className = "inventory-item";
+
+    const img = document.createElement("img");
+    img.src = resolveAssetUrl(item.image || "/assets/null_trophy.png");
+    img.alt = item.name || "Inventory item";
+
+    const textWrap = document.createElement("div");
+    const name = document.createElement("p");
+    name.className = "name";
+    name.textContent = `${item.name} x${formatCoins(item.count)}`;
+    const meta = document.createElement("p");
+    meta.className = "meta";
+    meta.textContent = `Sell: $${formatCoins(item.sellCoins)} each | ${formatShowcaseEffectText(item)}`;
+    textWrap.appendChild(name);
+    textWrap.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const sellOneButton = document.createElement("button");
+    sellOneButton.className = "close-profile";
+    sellOneButton.type = "button";
+    sellOneButton.textContent = "Sell 1";
+    const sellAllButton = document.createElement("button");
+    sellAllButton.className = "close-profile";
+    sellAllButton.type = "button";
+    sellAllButton.textContent = "Sell All";
+
+    sellOneButton.addEventListener("click", () => {
+      sellInventoryItem(item.key, 1).catch((err) => {
+        setStatus(err.message || "Could not sell item.", "tone-error");
+      });
+    });
+    sellAllButton.addEventListener("click", () => {
+      sellInventoryItem(item.key, null).catch((err) => {
+        setStatus(err.message || "Could not sell item.", "tone-error");
+      });
+    });
+    actions.appendChild(sellOneButton);
+    actions.appendChild(sellAllButton);
+
+    row.appendChild(img);
+    row.appendChild(textWrap);
+    row.appendChild(actions);
+    inventoryListEl.appendChild(row);
+  });
+}
+
+function renderShopPanel() {
+  if (!shopStatusEl || !shopBuyShowcaseButton) return;
+  const showcase = currentProfile?.showcase || {};
+  const slots = Number(showcase.slots || 0);
+  const maxSlots = Number(showcase.maxSlots || 0);
+  const nextCost = Number(showcase.nextSlotCost || 0);
+
+  if (slots <= 0) {
+    shopStatusEl.textContent = "Buy Showcase to unlock 1 showcase slot.";
+    shopBuyShowcaseButton.textContent = "Buy Showcase ($1,000)";
+    shopBuyShowcaseButton.disabled = false;
+    return;
+  }
+  if (slots >= maxSlots) {
+    shopStatusEl.textContent = `Showcase maxed at ${maxSlots} slots.`;
+    shopBuyShowcaseButton.textContent = "Maxed";
+    shopBuyShowcaseButton.disabled = true;
+    return;
+  }
+  shopStatusEl.textContent = `Current slots: ${slots}/${maxSlots}`;
+  shopBuyShowcaseButton.textContent = `Buy Showcase Slot ${slots + 1} ($${formatCoins(nextCost)})`;
+  shopBuyShowcaseButton.disabled = false;
+}
+
+function buildShowcaseOptionLabel(item) {
+  return `${item.name} (x${formatCoins(item.count)}) - ${formatShowcaseEffectText(item)}`;
+}
+
+function renderShowcasePanel() {
+  if (!showcaseSlotsEl || !showcaseSummaryEl) return;
+  const showcase = currentProfile?.showcase || {};
+  const items = Array.isArray(currentProfile?.inventory?.items) ? currentProfile.inventory.items : [];
+  const slots = Number(showcase.slots || 0);
+  const maxSlots = Number(showcase.maxSlots || 0);
+  const shown = Array.isArray(showcase.showcasedItems) ? showcase.showcasedItems : [];
+  const effects = showcase.effectsByAction || {};
+
+  showcaseSummaryEl.textContent =
+    `Slots: ${slots}/${maxSlots} | Dig +${Math.round(effects.dig?.cashPct || 0)}% Coins +${Math.round(effects.dig?.xpPct || 0)}% XP | Fish +${Math.round(effects.fish?.cashPct || 0)}% Coins +${Math.round(effects.fish?.xpPct || 0)}% XP | Hunt +${Math.round(effects.hunt?.cashPct || 0)}% Coins +${Math.round(effects.hunt?.xpPct || 0)}% XP`;
+  showcaseSlotsEl.innerHTML = "";
+  if (slots <= 0) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "Buy Showcase in shop first.";
+    showcaseSlotsEl.appendChild(empty);
+    if (saveShowcaseButton) saveShowcaseButton.disabled = true;
+    return;
+  }
+  if (saveShowcaseButton) saveShowcaseButton.disabled = false;
+
+  for (let index = 0; index < slots; index += 1) {
+    const row = document.createElement("label");
+    row.className = "showcase-slot";
+    row.dataset.slotIndex = String(index);
+    const label = document.createElement("span");
+    label.textContent = `Slot ${index + 1}`;
+    const select = document.createElement("select");
+    select.dataset.slotIndex = String(index);
+
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = "Empty";
+    select.appendChild(emptyOption);
+
+    items.forEach((item) => {
+      const option = document.createElement("option");
+      option.value = item.key;
+      option.textContent = buildShowcaseOptionLabel(item);
+      select.appendChild(option);
+    });
+    select.value = shown[index] || "";
+    row.appendChild(label);
+    row.appendChild(select);
+    showcaseSlotsEl.appendChild(row);
+  }
 }
 
 function getEffectiveRiskForGame() {
@@ -405,6 +630,85 @@ async function setDevFreezeMoney(enabled) {
   });
   applyPlayerSnapshot(payload.player);
   if (devFreezeMoneyToggle) devFreezeMoneyToggle.checked = payload.player?.dev?.freezeMoney === true;
+}
+
+async function setDevUpgradeLevel(action, upgradeKey, level) {
+  const payload = await fetchApi(`/dev/${discordUserId}/upgrades/${action}/${upgradeKey}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      level: Math.max(0, Math.min(1000, Math.floor(Number(level) || 0)))
+    })
+  });
+  applyPlayerSnapshot(payload.player);
+  if (payload.upgrades) renderUpgrades(payload.upgrades);
+}
+
+async function triggerDevAction(action, rewardLabel) {
+  const payload = await fetchApi(`/dev/${discordUserId}/actions/${action}/trigger`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rewardLabel: rewardLabel || "" })
+  });
+  applyPlayerSnapshot(payload.player);
+  await playAnimation(action, payload.rewardBreakdown?.bonusLabel || "");
+  await loadDailySummary().catch(() => {});
+  await loadAchievements().catch(() => {});
+  renderChanceTable(selectedChanceAction);
+  return payload;
+}
+
+async function loadInventoryData() {
+  const payload = await fetchApi(`/players/${discordUserId}/inventory`);
+  if (payload.player) applyPlayerSnapshot(payload.player);
+  renderInventoryPanel();
+  renderShowcasePanel();
+  return payload;
+}
+
+async function sellInventoryItem(itemKey, quantity = null) {
+  const payload = await fetchApi(`/players/${discordUserId}/inventory/sell`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ itemKey, quantity })
+  });
+  applyPlayerSnapshot(payload.player);
+  renderInventoryPanel();
+  renderShowcasePanel();
+  renderShopPanel();
+  renderChanceTable(selectedChanceAction);
+  setStatus(
+    `Sold ${payload.soldQuantity} item(s) for $${formatCoins(payload.coinsEarned)}.`,
+    "tone-success"
+  );
+}
+
+async function purchaseShowcaseSlotFromShop() {
+  const payload = await fetchApi(`/players/${discordUserId}/shop/showcase-slot`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" }
+  });
+  applyPlayerSnapshot(payload.player);
+  renderShopPanel();
+  renderShowcasePanel();
+  setStatus("Showcase slot purchased.", "tone-success");
+}
+
+async function saveShowcaseSelection() {
+  if (!showcaseSlotsEl) return;
+  const selects = Array.from(showcaseSlotsEl.querySelectorAll("select"));
+  const itemKeys = selects
+    .map((select) => String(select.value || "").trim())
+    .filter(Boolean);
+  const payload = await fetchApi(`/players/${discordUserId}/showcase`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ itemKeys })
+  });
+  applyPlayerSnapshot(payload.player);
+  renderShowcasePanel();
+  renderChanceTable(selectedChanceAction);
+  setStatus("Showcase saved.", "tone-success");
 }
 
 function resolveAssetUrl(url) {
@@ -530,11 +834,15 @@ function applyPlayerSnapshot(player) {
   setUserAvatar(player.discordAvatarUrl);
   populateProfilePanel(player);
   updateModeMenuAvailability();
+  updateShowcaseButtonVisibility();
   if (currentMode === "gambling" && !isGamblingUnlocked()) {
     setMode("actions");
   } else {
     renderChanceTable(selectedChanceAction);
   }
+  if (inventoryPanel && !inventoryPanel.hidden) renderInventoryPanel();
+  if (showcasePanel && !showcasePanel.hidden) renderShowcasePanel();
+  if (shopPanel && !shopPanel.hidden) renderShopPanel();
 }
 
 function formatResetTime(timestamp) {
@@ -853,9 +1161,7 @@ function populateProfilePanel(profile) {
   profileXpEl.textContent = `${lifetimeXp}`;
   profileCommandsEl.textContent = `${profile.totalCommandsUsed || 0}`;
   profileEarnedEl.textContent = `$${formatCoins(profile.totalMoneyEarned || 0)}`;
-  profileTrophiesEl.textContent = `${digCount > 0 ? "[X]" : "[ ]"} ${
-    fishCount > 0 ? "[X]" : "[ ]"
-  } ${huntCount > 0 ? "[X]" : "[ ]"}`;
+  profileTrophiesEl.textContent = `${formatCoins(digCount + fishCount + huntCount)}`;
   profileJoinedEl.textContent = formatDate(profile.createdAt);
   populateTrophyPanel(profile);
 }
@@ -1101,7 +1407,7 @@ function renderChanceTable(action) {
   if (!displayConfig) return;
 
   chanceTitleEl.textContent = `${formatActionLabel(action)} Chances`;
-  chanceXpEl.textContent = `XP: ${displayConfig.xpMin}-${displayConfig.xpMax}`;
+  chanceXpEl.textContent = `XP: ${displayConfig.xpMin}-${displayConfig.xpMax} | Boosts: Coins +${displayConfig.boostSummary?.cashPct || 0}% XP +${displayConfig.boostSummary?.xpPct || 0}%`;
 
   renderChanceRows(chanceWinningsEl, displayConfig.payoutTiers, (tier) => ({
     left: `$${tier.min} - $${tier.max}`,
@@ -1373,7 +1679,7 @@ function updateChancePanelForMode() {
   if (chanceXpEl) {
     const displayConfig = getDisplayActionConfig(selectedChanceAction);
     chanceXpEl.textContent = showActionChances
-      ? `XP: ${displayConfig?.xpMin || 0}-${displayConfig?.xpMax || 0}`
+      ? `XP: ${displayConfig?.xpMin || 0}-${displayConfig?.xpMax || 0} | Boosts: Coins +${displayConfig?.boostSummary?.cashPct || 0}% XP +${displayConfig?.boostSummary?.xpPct || 0}%`
       : "Use the selector below to switch sections.";
   }
 }
@@ -1692,7 +1998,10 @@ function bindActions() {
 function bindModeAndGambling() {
   if (shopButton) {
     shopButton.addEventListener("click", () => {
-      setStatus("Shop is coming soon.");
+      if (shopPanel) {
+        shopPanel.hidden = false;
+        renderShopPanel();
+      }
     });
   }
 
@@ -1807,16 +2116,7 @@ function closeDropdown() {
 }
 
 function bindUserMenu() {
-  if (
-    !userMenuButton ||
-    !userDropdown ||
-    !openProfileButton ||
-    !profilePanel ||
-    !closeProfileButton ||
-    !openTrophiesButton ||
-    !trophyPanel ||
-    !closeTrophiesButton
-  ) {
+  if (!userMenuButton || !userDropdown || !openProfileButton || !profilePanel || !closeProfileButton) {
     return;
   }
 
@@ -1867,6 +2167,20 @@ function bindUserMenu() {
     });
   }
 
+  if (openInventoryButton && inventoryPanel && closeInventoryButton) {
+    openInventoryButton.addEventListener("click", async () => {
+      inventoryPanel.hidden = false;
+      try {
+        await loadInventoryData();
+      } catch (_err) {
+        renderInventoryPanel();
+      }
+    });
+    closeInventoryButton.addEventListener("click", () => {
+      inventoryPanel.hidden = true;
+    });
+  }
+
   if (openUpgradeButton && upgradePanel && closeUpgradeButton) {
     openUpgradeButton.addEventListener("click", async () => {
       upgradePanel.hidden = false;
@@ -1881,16 +2195,53 @@ function bindUserMenu() {
     });
   }
 
-  openTrophiesButton.addEventListener("click", () => {
-    trophyPanel.hidden = false;
-    if (currentProfile) {
-      populateTrophyPanel(currentProfile);
-    }
-  });
+  if (openTrophiesButton && trophyPanel && closeTrophiesButton) {
+    openTrophiesButton.addEventListener("click", () => {
+      trophyPanel.hidden = false;
+      if (currentProfile) {
+        populateTrophyPanel(currentProfile);
+      }
+    });
+    closeTrophiesButton.addEventListener("click", () => {
+      trophyPanel.hidden = true;
+    });
+  }
 
-  closeTrophiesButton.addEventListener("click", () => {
-    trophyPanel.hidden = true;
-  });
+  if (openShowcaseButton && showcasePanel && closeShowcaseButton) {
+    openShowcaseButton.addEventListener("click", async () => {
+      showcasePanel.hidden = false;
+      closeDropdown();
+      try {
+        await loadInventoryData();
+      } catch (_err) {
+        renderShowcasePanel();
+      }
+    });
+    closeShowcaseButton.addEventListener("click", () => {
+      showcasePanel.hidden = true;
+    });
+  }
+
+  if (saveShowcaseButton) {
+    saveShowcaseButton.addEventListener("click", () => {
+      saveShowcaseSelection().catch((err) => {
+        setStatus(err.message || "Could not save showcase.", "tone-error");
+      });
+    });
+  }
+
+  if (closeShopButton && shopPanel) {
+    closeShopButton.addEventListener("click", () => {
+      shopPanel.hidden = true;
+    });
+  }
+  if (shopBuyShowcaseButton) {
+    shopBuyShowcaseButton.addEventListener("click", () => {
+      purchaseShowcaseSlotFromShop().catch((err) => {
+        setStatus(err.message || "Could not purchase showcase slot.", "tone-error");
+      });
+    });
+  }
 
   if (isDevOwner && openDevModeButton && devPanel && closeDevModeButton) {
     openDevModeButton.hidden = false;
@@ -1912,6 +2263,17 @@ function bindUserMenu() {
           devGambleRiskInput.value = String(Number(riskSliderEl.value || 0));
         }
         if (devGambleRewardInput) devGambleRewardInput.value = "1";
+        if (
+          devUpgradeActionSelect &&
+          devUpgradeKeySelect &&
+          devUpgradeLevelInput &&
+          currentProfile?.upgrades
+        ) {
+          const currentLevel =
+            currentProfile.upgrades?.[devUpgradeActionSelect.value]?.[devUpgradeKeySelect.value]
+              ?.level || 0;
+          devUpgradeLevelInput.value = String(currentLevel);
+        }
         updateRiskUi();
       } catch (_err) {
         setStatus("Could not load dev mode config.", "tone-error");
@@ -1938,19 +2300,71 @@ function bindUserMenu() {
       });
     }
     if (devTriggerDigButton) {
-      devTriggerDigButton.addEventListener("click", () =>
-        playAnimation("dig", devTriggerDigSelect?.value || "")
-      );
+      devTriggerDigButton.addEventListener("click", async () => {
+        try {
+          const payload = await triggerDevAction("dig", devTriggerDigSelect?.value || "");
+          setStatus(
+            `Dev Dig reward: +$${formatCoins(payload.reward || 0)}.`,
+            "tone-success"
+          );
+        } catch (err) {
+          setStatus(err.message || "Dev dig trigger failed.", "tone-error");
+        }
+      });
     }
     if (devTriggerFishButton) {
-      devTriggerFishButton.addEventListener("click", () =>
-        playAnimation("fish", devTriggerFishSelect?.value || "")
-      );
+      devTriggerFishButton.addEventListener("click", async () => {
+        try {
+          const payload = await triggerDevAction("fish", devTriggerFishSelect?.value || "");
+          setStatus(
+            `Dev Fish reward: +$${formatCoins(payload.reward || 0)}.`,
+            "tone-success"
+          );
+        } catch (err) {
+          setStatus(err.message || "Dev fish trigger failed.", "tone-error");
+        }
+      });
     }
     if (devTriggerHuntButton) {
-      devTriggerHuntButton.addEventListener("click", () =>
-        playAnimation("hunt", devTriggerHuntSelect?.value || "")
-      );
+      devTriggerHuntButton.addEventListener("click", async () => {
+        try {
+          const payload = await triggerDevAction("hunt", devTriggerHuntSelect?.value || "");
+          setStatus(
+            `Dev Hunt reward: +$${formatCoins(payload.reward || 0)}.`,
+            "tone-success"
+          );
+        } catch (err) {
+          setStatus(err.message || "Dev hunt trigger failed.", "tone-error");
+        }
+      });
+    }
+    if (
+      devSetUpgradeLevelButton &&
+      devUpgradeActionSelect &&
+      devUpgradeKeySelect &&
+      devUpgradeLevelInput
+    ) {
+      devSetUpgradeLevelButton.addEventListener("click", async () => {
+        try {
+          await setDevUpgradeLevel(
+            devUpgradeActionSelect.value,
+            devUpgradeKeySelect.value,
+            Number(devUpgradeLevelInput.value || 0)
+          );
+          setStatus("Dev upgrade level updated.", "tone-success");
+        } catch (err) {
+          setStatus(err.message || "Could not set upgrade level.", "tone-error");
+        }
+      });
+      const syncUpgradeInput = () => {
+        if (!currentProfile?.upgrades || !devUpgradeLevelInput) return;
+        const currentLevel =
+          currentProfile.upgrades?.[devUpgradeActionSelect.value]?.[devUpgradeKeySelect.value]
+            ?.level || 0;
+        devUpgradeLevelInput.value = String(currentLevel);
+      };
+      devUpgradeActionSelect.addEventListener("change", syncUpgradeInput);
+      devUpgradeKeySelect.addEventListener("change", syncUpgradeInput);
     }
     if (devResetConfigButton) {
       devResetConfigButton.addEventListener("click", resetDevConfig);

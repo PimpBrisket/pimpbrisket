@@ -7,6 +7,73 @@ const MAX_BET_COINS = 1_000_000;
 const DAILY_BASE_REWARD = 250;
 const DAILY_CHALLENGE_BASE_REWARD = 700;
 const DAILY_CHALLENGE_INTERACTIONS_REQUIRED = 100;
+const SHOWCASE_SLOT_COSTS = [1000, 10000, 50000, 100000, 200000];
+
+const ITEM_DEFS = {
+  gold_coin: {
+    key: "gold_coin",
+    name: "Gold Coin",
+    image: "/assets/Gold%20coin.png",
+    sellCoins: 15,
+    showcase: { action: "dig", cashPct: 5, xpPct: 0 }
+  },
+  da_bone: {
+    key: "da_bone",
+    name: "Da Bone",
+    image: "/assets/Da%20bone.png",
+    sellCoins: 35,
+    showcase: { action: "dig", cashPct: 0, xpPct: 5 }
+  },
+  collectors_greed: {
+    key: "collectors_greed",
+    name: "Collector's Greed",
+    image: "/assets/dig-trophy.png",
+    sellCoins: 150,
+    showcase: { action: "dig", cashPct: 10, xpPct: 10 }
+  },
+  treasure_scale: {
+    key: "treasure_scale",
+    name: "Treasure Scale",
+    image: "/assets/null_trophy.png",
+    sellCoins: 15,
+    showcase: { action: "fish", cashPct: 0, xpPct: 5 }
+  },
+  ancient_chest_key: {
+    key: "ancient_chest_key",
+    name: "Ancient Chest Key",
+    image: "/assets/null_trophy.png",
+    sellCoins: 35,
+    showcase: { action: "fish", cashPct: 5, xpPct: 0 }
+  },
+  midnight_ocean: {
+    key: "midnight_ocean",
+    name: "Midnight Ocean",
+    image: "/assets/fish-trophy.png",
+    sellCoins: 150,
+    showcase: { action: "fish", cashPct: 10, xpPct: 10 }
+  },
+  pelt_bonus: {
+    key: "pelt_bonus",
+    name: "Pelt Bonus",
+    image: "/assets/null_trophy.png",
+    sellCoins: 15,
+    showcase: { action: "hunt", cashPct: 5, xpPct: 0 }
+  },
+  rare_antler_set: {
+    key: "rare_antler_set",
+    name: "Rare Antler Set",
+    image: "/assets/null_trophy.png",
+    sellCoins: 35,
+    showcase: { action: "hunt", cashPct: 0, xpPct: 5 }
+  },
+  many_heads: {
+    key: "many_heads",
+    name: "Many Heads",
+    image: "/assets/hunt-trophy.png",
+    sellCoins: 150,
+    showcase: { action: "hunt", cashPct: 10, xpPct: 10 }
+  }
+};
 
 const DEFAULT_UPGRADES = {
   dig: { cash: 0, xp: 0, drop: 0 },
@@ -123,13 +190,25 @@ const ACTIONS = {
     ],
     bonusTiers: [
       { chancePct: 87, coins: 0, label: "No extra drop" },
-      { chancePct: 10, coins: 8, label: "Gold Coin" },
-      { chancePct: 2, coins: 20, label: "Da Bone" },
+      {
+        chancePct: 11,
+        coins: 15,
+        label: "Gold Coin",
+        itemKey: "gold_coin",
+        itemImage: "/assets/Gold%20coin.png"
+      },
+      {
+        chancePct: 3,
+        coins: 35,
+        label: "Da Bone",
+        itemKey: "da_bone",
+        itemImage: "/assets/Da%20bone.png"
+      },
       {
         chancePct: 1,
-        coins: 45,
+        coins: 75,
         label: "Collectors Greed",
-        itemKey: "dig_trophy",
+        itemKey: "collectors_greed",
         itemImage: "/assets/dig-trophy.png"
       }
     ]
@@ -145,14 +224,26 @@ const ACTIONS = {
       { chancePct: 5, min: 39, max: 58, label: "Legend Catch" }
     ],
     bonusTiers: [
-      { chancePct: 85, coins: 0, label: "No extra drop" },
-      { chancePct: 11, coins: 10, label: "Treasure Scale" },
-      { chancePct: 3, coins: 24, label: "Ancient Chest Key" },
+      { chancePct: 87, coins: 0, label: "No extra drop" },
+      {
+        chancePct: 11,
+        coins: 15,
+        label: "Treasure Scale",
+        itemKey: "treasure_scale",
+        itemImage: "/assets/null_trophy.png"
+      },
+      {
+        chancePct: 3,
+        coins: 35,
+        label: "Ancient Chest Key",
+        itemKey: "ancient_chest_key",
+        itemImage: "/assets/null_trophy.png"
+      },
       {
         chancePct: 1,
-        coins: 45,
+        coins: 75,
         label: "Midnight Ocean",
-        itemKey: "fish_trophy",
+        itemKey: "midnight_ocean",
         itemImage: "/assets/fish-trophy.png"
       }
     ]
@@ -168,14 +259,26 @@ const ACTIONS = {
       { chancePct: 5, min: 47, max: 68, label: "Elite Trophy" }
     ],
     bonusTiers: [
-      { chancePct: 84, coins: 0, label: "No extra drop" },
-      { chancePct: 12, coins: 12, label: "Pelt Bonus" },
-      { chancePct: 3, coins: 30, label: "Rare Antler Set" },
+      { chancePct: 87, coins: 0, label: "No extra drop" },
+      {
+        chancePct: 11,
+        coins: 15,
+        label: "Pelt Bonus",
+        itemKey: "pelt_bonus",
+        itemImage: "/assets/null_trophy.png"
+      },
+      {
+        chancePct: 3,
+        coins: 35,
+        label: "Rare Antler Set",
+        itemKey: "rare_antler_set",
+        itemImage: "/assets/null_trophy.png"
+      },
       {
         chancePct: 1,
-        coins: 45,
+        coins: 75,
         label: "Many Heads",
-        itemKey: "hunt_trophy",
+        itemKey: "many_heads",
         itemImage: "/assets/hunt-trophy.png"
       }
     ]
@@ -214,6 +317,9 @@ const PLAYER_SELECT_SQL = `SELECT
   "totalDigUpgradesPurchased",
   "totalFishUpgradesPurchased",
   "totalHuntUpgradesPurchased",
+  inventory,
+  "showcaseSlots",
+  "showcasedItems",
   "achievementState",
   upgrades
  FROM players
@@ -302,6 +408,108 @@ function sanitizeAchievementState(input) {
   return state;
 }
 
+function sanitizeShowcaseSlots(value) {
+  return Math.max(
+    0,
+    Math.min(SHOWCASE_SLOT_COSTS.length, Math.floor(Number(value) || 0))
+  );
+}
+
+function sanitizeInventory(input) {
+  const inventory = {};
+  if (!input || typeof input !== "object") return inventory;
+  for (const key of Object.keys(ITEM_DEFS)) {
+    const count = Math.max(0, Math.floor(Number(input[key]) || 0));
+    if (count > 0) inventory[key] = count;
+  }
+  return inventory;
+}
+
+function sanitizeShowcasedItems(input, slots, inventory) {
+  if (!Array.isArray(input) || slots <= 0) return [];
+  const next = [];
+  const available = new Set(Object.keys(ITEM_DEFS));
+  for (const rawKey of input) {
+    if (next.length >= slots) break;
+    if (typeof rawKey !== "string") continue;
+    const key = rawKey.trim();
+    if (!available.has(key)) continue;
+    if (next.includes(key)) continue;
+    if (Math.max(0, Math.floor(Number(inventory[key]) || 0)) <= 0) continue;
+    next.push(key);
+  }
+  return next;
+}
+
+function getNextShowcaseSlotCost(showcaseSlots) {
+  const slots = sanitizeShowcaseSlots(showcaseSlots);
+  if (slots >= SHOWCASE_SLOT_COSTS.length) return null;
+  return SHOWCASE_SLOT_COSTS[slots];
+}
+
+function getShowcaseEffects(player) {
+  const result = {
+    dig: { cashPct: 0, xpPct: 0, cashMultiplier: 1, xpMultiplier: 1 },
+    fish: { cashPct: 0, xpPct: 0, cashMultiplier: 1, xpMultiplier: 1 },
+    hunt: { cashPct: 0, xpPct: 0, cashMultiplier: 1, xpMultiplier: 1 }
+  };
+  const inventory = sanitizeInventory(player?.inventory || {});
+  const slots = sanitizeShowcaseSlots(player?.showcaseSlots);
+  const showcasedItems = sanitizeShowcasedItems(player?.showcasedItems || [], slots, inventory);
+  showcasedItems.forEach((itemKey) => {
+    const item = ITEM_DEFS[itemKey];
+    if (!item?.showcase?.action || !result[item.showcase.action]) return;
+    result[item.showcase.action].cashPct += Number(item.showcase.cashPct || 0);
+    result[item.showcase.action].xpPct += Number(item.showcase.xpPct || 0);
+  });
+  for (const actionKey of Object.keys(result)) {
+    result[actionKey].cashMultiplier = 1 + result[actionKey].cashPct / 100;
+    result[actionKey].xpMultiplier = 1 + result[actionKey].xpPct / 100;
+  }
+  return result;
+}
+
+function buildInventorySummary(player) {
+  const inventory = sanitizeInventory(player?.inventory || {});
+  return Object.keys(inventory)
+    .map((itemKey) => {
+      const item = ITEM_DEFS[itemKey];
+      if (!item) return null;
+      return {
+        key: item.key,
+        name: item.name,
+        image: item.image || "/assets/null_trophy.png",
+        count: inventory[itemKey],
+        sellCoins: item.sellCoins || 0,
+        showcase: {
+          action: item.showcase?.action || null,
+          cashPct: Number(item.showcase?.cashPct || 0),
+          xpPct: Number(item.showcase?.xpPct || 0)
+        }
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function buildShowcaseSummary(player) {
+  const inventory = sanitizeInventory(player?.inventory || {});
+  const slots = sanitizeShowcaseSlots(player?.showcaseSlots);
+  const showcasedItems = sanitizeShowcasedItems(player?.showcasedItems || [], slots, inventory);
+  return {
+    slots,
+    maxSlots: SHOWCASE_SLOT_COSTS.length,
+    unlocked: slots > 0,
+    nextSlotCost: getNextShowcaseSlotCost(slots),
+    showcasedItems,
+    effectsByAction: getShowcaseEffects({
+      inventory,
+      showcasedItems,
+      showcaseSlots: slots
+    })
+  };
+}
+
 function xpRequiredForLevel(level) {
   if (level >= MAX_LEVEL) return 0;
   if (level <= 10) return 60 + level * 18;
@@ -326,12 +534,22 @@ async function getPlayerByDiscordId(db, discordUserId, client = db) {
   const result = await client.query(PLAYER_SELECT_SQL, [discordUserId]);
   const row = result.rows[0] || null;
   if (!row) return null;
+  const inventory = sanitizeInventory(row.inventory || {});
+  const showcaseSlots = sanitizeShowcaseSlots(row.showcaseSlots);
+  const showcasedItems = sanitizeShowcasedItems(
+    row.showcasedItems || [],
+    showcaseSlots,
+    inventory
+  );
   return {
     ...row,
     timezone: row.timezone ? safeTimeZone(row.timezone) : null,
     devConfig: sanitizeDevConfig(row.devConfig || {}),
     upgrades: sanitizeUpgrades(row.upgrades || {}),
-    achievementState: sanitizeAchievementState(row.achievementState || {})
+    achievementState: sanitizeAchievementState(row.achievementState || {}),
+    inventory,
+    showcaseSlots,
+    showcasedItems
   };
 }
 
@@ -382,6 +600,9 @@ async function initDatabase(db) {
     "totalDigUpgradesPurchased" INTEGER NOT NULL DEFAULT 0,
     "totalFishUpgradesPurchased" INTEGER NOT NULL DEFAULT 0,
     "totalHuntUpgradesPurchased" INTEGER NOT NULL DEFAULT 0,
+    inventory JSONB,
+    "showcaseSlots" INTEGER NOT NULL DEFAULT 0,
+    "showcasedItems" JSONB,
     "achievementState" JSONB,
     upgrades JSONB
   )`);
@@ -414,6 +635,9 @@ async function initDatabase(db) {
     `"totalDigUpgradesPurchased" INTEGER NOT NULL DEFAULT 0`,
     `"totalFishUpgradesPurchased" INTEGER NOT NULL DEFAULT 0`,
     `"totalHuntUpgradesPurchased" INTEGER NOT NULL DEFAULT 0`,
+    `inventory JSONB`,
+    `"showcaseSlots" INTEGER NOT NULL DEFAULT 0`,
+    `"showcasedItems" JSONB`,
     `"achievementState" JSONB`,
     `upgrades JSONB`
   ];
@@ -920,7 +1144,9 @@ async function performAction(db, discordUserId, action, options = {}) {
   const {
     ignoreCooldown = false,
     preserveExistingCooldown = false,
-    cashMultiplier = 1
+    cashMultiplier = 1,
+    forcePayoutLabel = null,
+    forceBonusLabel = null
   } = options;
 
   const client = await db.connect();
@@ -941,6 +1167,14 @@ async function performAction(db, discordUserId, action, options = {}) {
     const actionConfig = getEffectiveActionConfigForPlayer(playerBefore, action);
     const upgrades = sanitizeUpgrades(playerBefore.upgrades || {});
     const upgradeEffects = getUpgradeEffects(upgrades, action);
+    const showcaseEffectsByAction = getShowcaseEffects(playerBefore);
+    const showcaseEffects = showcaseEffectsByAction[action] || {
+      cashPct: 0,
+      xpPct: 0,
+      cashMultiplier: 1,
+      xpMultiplier: 1
+    };
+    const inventory = sanitizeInventory(playerBefore.inventory || {});
     const freezeMoney = isMoneyFrozen(playerBefore);
 
     const now = Date.now();
@@ -955,17 +1189,27 @@ async function performAction(db, discordUserId, action, options = {}) {
       };
     }
 
-    const payoutTier = rollWeightedTier(actionConfig.payoutTiers);
+    const payoutTier = typeof forcePayoutLabel === "string" && forcePayoutLabel.trim()
+      ? actionConfig.payoutTiers.find((tier) => tier.label === forcePayoutLabel.trim()) ||
+        rollWeightedTier(actionConfig.payoutTiers)
+      : rollWeightedTier(actionConfig.payoutTiers);
     const baseRewardRaw = randomInt(payoutTier.min, payoutTier.max);
     const boostedBonusTiers = applyDropBoostToBonusTiers(
       actionConfig.bonusTiers,
       upgradeEffects.dropReductionFactor
     );
-    const bonusTier = rollWeightedTier(boostedBonusTiers);
+    const bonusTier = typeof forceBonusLabel === "string" && forceBonusLabel.trim()
+      ? boostedBonusTiers.find((tier) => tier.label === forceBonusLabel.trim()) ||
+        rollWeightedTier(boostedBonusTiers)
+      : rollWeightedTier(boostedBonusTiers);
     const bonusCoinsRaw = bonusTier.coins;
     const xpGained = Math.max(
       1,
-      Math.round(randomInt(actionConfig.xpMin, actionConfig.xpMax) * upgradeEffects.xpMultiplier)
+      Math.round(
+        randomInt(actionConfig.xpMin, actionConfig.xpMax) *
+          upgradeEffects.xpMultiplier *
+          showcaseEffects.xpMultiplier
+      )
     );
 
     let nextLevel = Math.max(1, Number(playerBefore.level) || 1);
@@ -980,7 +1224,10 @@ async function performAction(db, discordUserId, action, options = {}) {
       nextLevel += 1;
       const levelRewardRaw = levelRewardCoins(nextLevel);
       const levelReward = Math.round(
-        levelRewardRaw * cashMultiplier * upgradeEffects.cashMultiplier
+        levelRewardRaw *
+          cashMultiplier *
+          upgradeEffects.cashMultiplier *
+          showcaseEffects.cashMultiplier
       );
       levelRewardTotal += levelReward;
       levelUps.push({ level: nextLevel, rewardCoins: levelReward });
@@ -991,14 +1238,19 @@ async function performAction(db, discordUserId, action, options = {}) {
       nextXp = 0;
     }
 
-    const effectiveCashMultiplier = cashMultiplier * upgradeEffects.cashMultiplier;
+    const effectiveCashMultiplier =
+      cashMultiplier * upgradeEffects.cashMultiplier * showcaseEffects.cashMultiplier;
     const baseReward = Math.round(baseRewardRaw * effectiveCashMultiplier);
     const bonusCoins = Math.round(bonusCoinsRaw * effectiveCashMultiplier);
     const totalRewardCoins = baseReward + bonusCoins + levelRewardTotal;
     const appliedRewardCoins = freezeMoney ? 0 : totalRewardCoins;
-    const digTrophyGain = bonusTier.itemKey === "dig_trophy" ? 1 : 0;
-    const fishTrophyGain = bonusTier.itemKey === "fish_trophy" ? 1 : 0;
-    const huntTrophyGain = bonusTier.itemKey === "hunt_trophy" ? 1 : 0;
+    const bonusItemKey = bonusTier.itemKey || null;
+    if (bonusItemKey) {
+      inventory[bonusItemKey] = Math.max(0, Math.floor(Number(inventory[bonusItemKey]) || 0)) + 1;
+    }
+    const digTrophyGain = bonusItemKey === "collectors_greed" ? 1 : 0;
+    const fishTrophyGain = bonusItemKey === "midnight_ocean" ? 1 : 0;
+    const huntTrophyGain = bonusItemKey === "many_heads" ? 1 : 0;
     const bonusRewardCountGain = bonusTier.coins > 0 || bonusTier.itemKey ? 1 : 0;
 
     const dailyState = buildDailyState(playerBefore, now);
@@ -1024,8 +1276,9 @@ async function performAction(db, discordUserId, action, options = {}) {
            "dailyTaskDay" = $10,
            "dailyTaskInteractions" = $11,
            "totalBonusRewards" = "totalBonusRewards" + $12,
+           inventory = $13::jsonb,
            "updatedAt" = NOW()
-       WHERE "discordUserId" = $13`,
+       WHERE "discordUserId" = $14`,
       [
         appliedRewardCoins,
         nextXp,
@@ -1039,6 +1292,7 @@ async function performAction(db, discordUserId, action, options = {}) {
         dailyState.currentDay,
         nextDailyTaskInteractions,
         bonusRewardCountGain,
+        JSON.stringify(inventory),
         discordUserId
       ]
     );
@@ -1057,11 +1311,15 @@ async function performAction(db, discordUserId, action, options = {}) {
         baseLabel: payoutTier.label,
         bonusCoins,
         bonusLabel: bonusTier.label,
-        bonusItemKey: bonusTier.itemKey || null,
+        bonusItemKey,
         bonusItemImage: bonusTier.itemImage || null,
         bonusChancePct:
           boostedBonusTiers.find((tier) => tier.label === bonusTier.label)?.chancePct ||
           bonusTier.chancePct,
+        showcaseBoost: {
+          cashPct: showcaseEffects.cashPct,
+          xpPct: showcaseEffects.xpPct
+        },
         xpGained,
         levelRewardCoins: levelRewardTotal,
         levelUps,
@@ -1560,6 +1818,203 @@ async function purchaseUpgradeMax(db, discordUserId, action, upgradeKey) {
   }
 }
 
+async function sellInventoryItem(db, discordUserId, itemKey, quantity = null) {
+  if (!ITEM_DEFS[itemKey]) throw new Error("Unsupported item");
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO players ("discordUserId", money, upgrades, "achievementState")
+       VALUES ($1, 0, $2::jsonb, $3::jsonb)
+       ON CONFLICT ("discordUserId") DO NOTHING`,
+      [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
+    );
+    await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
+    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const inventory = sanitizeInventory(playerBefore.inventory || {});
+    const ownedCount = Math.max(0, Math.floor(Number(inventory[itemKey]) || 0));
+    if (ownedCount <= 0) {
+      await client.query("COMMIT");
+      return { ok: false, error: "You do not have that item", player: playerBefore };
+    }
+
+    const requestedQty =
+      quantity === null || quantity === undefined
+        ? ownedCount
+        : Math.max(1, Math.floor(Number(quantity) || 1));
+    const sellQty = Math.max(1, Math.min(ownedCount, requestedQty));
+    const def = ITEM_DEFS[itemKey];
+    const grossCoins = sellQty * Math.max(0, Math.floor(Number(def.sellCoins) || 0));
+    const appliedCoins = isMoneyFrozen(playerBefore) ? 0 : grossCoins;
+
+    const remaining = ownedCount - sellQty;
+    if (remaining > 0) inventory[itemKey] = remaining;
+    else delete inventory[itemKey];
+
+    const showcaseSlots = sanitizeShowcaseSlots(playerBefore.showcaseSlots);
+    const showcasedItems = sanitizeShowcasedItems(
+      playerBefore.showcasedItems || [],
+      showcaseSlots,
+      inventory
+    );
+
+    await client.query(
+      `UPDATE players
+       SET money = money + $1,
+           "totalMoneyEarned" = "totalMoneyEarned" + $1,
+           inventory = $2::jsonb,
+           "showcasedItems" = $3::jsonb,
+           "updatedAt" = NOW()
+       WHERE "discordUserId" = $4`,
+      [appliedCoins, JSON.stringify(inventory), JSON.stringify(showcasedItems), discordUserId]
+    );
+
+    const playerAfter = await getPlayerByDiscordId(client, discordUserId, client);
+    await client.query("COMMIT");
+    return {
+      ok: true,
+      soldQuantity: sellQty,
+      coinsEarned: appliedCoins,
+      player: playerAfter
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function purchaseShowcaseSlot(db, discordUserId) {
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO players ("discordUserId", money, upgrades, "achievementState")
+       VALUES ($1, 0, $2::jsonb, $3::jsonb)
+       ON CONFLICT ("discordUserId") DO NOTHING`,
+      [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
+    );
+    await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
+    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const currentSlots = sanitizeShowcaseSlots(playerBefore.showcaseSlots);
+    const nextCost = getNextShowcaseSlotCost(currentSlots);
+    if (nextCost === null) {
+      await client.query("COMMIT");
+      return { ok: false, error: "Showcase is already maxed", player: playerBefore };
+    }
+    const freezeMoney = isMoneyFrozen(playerBefore);
+    if (!freezeMoney && Number(playerBefore.money || 0) < nextCost) {
+      await client.query("COMMIT");
+      return {
+        ok: false,
+        error: "Not enough coins",
+        cost: nextCost,
+        player: playerBefore
+      };
+    }
+
+    await client.query(
+      `UPDATE players
+       SET money = money - $1,
+           "showcaseSlots" = $2,
+           "updatedAt" = NOW()
+       WHERE "discordUserId" = $3`,
+      [freezeMoney ? 0 : nextCost, currentSlots + 1, discordUserId]
+    );
+    const playerAfter = await getPlayerByDiscordId(client, discordUserId, client);
+    await client.query("COMMIT");
+    return {
+      ok: true,
+      cost: freezeMoney ? 0 : nextCost,
+      player: playerAfter
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function setShowcasedItems(db, discordUserId, itemKeys = []) {
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO players ("discordUserId", money, upgrades, "achievementState")
+       VALUES ($1, 0, $2::jsonb, $3::jsonb)
+       ON CONFLICT ("discordUserId") DO NOTHING`,
+      [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
+    );
+    await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
+    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const slots = sanitizeShowcaseSlots(playerBefore.showcaseSlots);
+    const inventory = sanitizeInventory(playerBefore.inventory || {});
+    const nextItems = sanitizeShowcasedItems(itemKeys, slots, inventory);
+
+    await client.query(
+      `UPDATE players
+       SET "showcasedItems" = $1::jsonb,
+           "updatedAt" = NOW()
+       WHERE "discordUserId" = $2`,
+      [JSON.stringify(nextItems), discordUserId]
+    );
+    const playerAfter = await getPlayerByDiscordId(client, discordUserId, client);
+    await client.query("COMMIT");
+    return { ok: true, player: playerAfter };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function setPlayerUpgradeLevel(db, discordUserId, action, upgradeKey, level) {
+  if (!ACTIONS[action]) throw new Error("Unsupported action");
+  if (!UPGRADE_KEYS.includes(upgradeKey)) throw new Error("Unsupported upgrade type");
+  const targetLevel = Math.max(
+    0,
+    Math.min(MAX_UPGRADE_LEVEL, Math.floor(Number(level) || 0))
+  );
+
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO players ("discordUserId", money, upgrades, "achievementState")
+       VALUES ($1, 0, $2::jsonb, $3::jsonb)
+       ON CONFLICT ("discordUserId") DO NOTHING`,
+      [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
+    );
+    await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
+    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const upgrades = sanitizeUpgrades(playerBefore.upgrades || {});
+    upgrades[action][upgradeKey] = targetLevel;
+
+    await client.query(
+      `UPDATE players
+       SET upgrades = $1::jsonb,
+           "updatedAt" = NOW()
+       WHERE "discordUserId" = $2`,
+      [JSON.stringify(upgrades), discordUserId]
+    );
+    const playerAfter = await getPlayerByDiscordId(client, discordUserId, client);
+    await client.query("COMMIT");
+    return {
+      ok: true,
+      player: playerAfter,
+      upgrades: buildUpgradeSummary(playerAfter)
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   ACTION_COOLDOWN_MS,
   MAX_LEVEL,
@@ -1582,6 +2037,9 @@ module.exports = {
   buildAchievementProgress,
   buildDailyState,
   buildUpgradeSummary,
+  buildInventorySummary,
+  buildShowcaseSummary,
+  getShowcaseEffects,
   setPlayerTimezone,
   getDailySummary,
   claimDailyReward,
@@ -1590,6 +2048,10 @@ module.exports = {
   settleGamblingResult,
   purchaseUpgrade,
   purchaseUpgradeMax,
+  sellInventoryItem,
+  purchaseShowcaseSlot,
+  setShowcasedItems,
+  setPlayerUpgradeLevel,
   xpRequiredForLevel,
   levelRewardCoins
 };
