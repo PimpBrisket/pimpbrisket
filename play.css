@@ -486,7 +486,7 @@ body.profile-focus #profile-panel {
 }
 
 #shop-status {
-  text-align: center;
+  display: none;
 }
 
 .profile-showcase-items {

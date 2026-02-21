@@ -587,7 +587,7 @@ function renderInventoryPanel() {
 }
 
 function renderShopPanel() {
-  if (!shopStatusEl || !shopBuyShowcaseButton) return;
+  if (!shopBuyShowcaseButton) return;
   const showcase = currentProfile?.showcase || {};
   const rawSlots = Number(showcase.slots || 0);
   const maxSlots = Number(showcase.maxSlots || 0);
@@ -605,18 +605,15 @@ function renderShopPanel() {
   }
 
   if (rawSlots <= 0) {
-    shopStatusEl.textContent = `${slots}/${maxSlots}`;
     shopBuyShowcaseButton.textContent = "Buy Showcase ($1,000)";
     shopBuyShowcaseButton.disabled = false;
     return;
   }
   if (rawSlots >= maxSlots) {
-    shopStatusEl.textContent = `${maxSlots}/${maxSlots}`;
     shopBuyShowcaseButton.textContent = "Maxed";
     shopBuyShowcaseButton.disabled = true;
     return;
   }
-  shopStatusEl.textContent = `${slots}/${maxSlots}`;
   shopBuyShowcaseButton.textContent = `Buy Slot ${Math.min(maxSlots, slots + 1)}/${maxSlots} ($${formatCoins(nextCost)})`;
   shopBuyShowcaseButton.disabled = false;
 }
@@ -1582,7 +1579,26 @@ function renderChanceTable(action) {
   chanceTitleEl.textContent = `${formatActionLabel(action)} Chances`;
   chanceXpEl.textContent = `XP: ${displayConfig.xpMin}-${displayConfig.xpMax} | Boosts: Coins +${displayConfig.boostSummary?.cashPct || 0}% XP +${displayConfig.boostSummary?.xpPct || 0}%`;
 
-  renderChanceRows(chanceWinningsEl, displayConfig.payoutTiers, (tier) => ({
+  const totalCashBoostPct = Math.max(0, Number(displayConfig.boostSummary?.cashPct || 0));
+  const cashBoostMultiplier = 1 + totalCashBoostPct / 100;
+  const normalizedPayoutTiers = (config.payoutTiers || []).map((tier) => ({
+    chancePct: Number(tier.chancePct || 0),
+    min: Math.max(0, Math.ceil(Number(tier.min || 0) * cashBoostMultiplier)),
+    max: Math.max(0, Math.ceil(Number(tier.max || 0) * cashBoostMultiplier))
+  }));
+  for (let i = 1; i < normalizedPayoutTiers.length; i += 1) {
+    const prev = normalizedPayoutTiers[i - 1];
+    const current = normalizedPayoutTiers[i];
+    const minAllowed = prev.max + 1;
+    if (current.min < minAllowed) {
+      current.min = minAllowed;
+    }
+    if (current.max < current.min) {
+      current.max = current.min;
+    }
+  }
+
+  renderChanceRows(chanceWinningsEl, normalizedPayoutTiers, (tier) => ({
     left: `$${tier.min} - $${tier.max}`,
     right: `${formatChancePct(tier.chancePct)}%`
   }));
