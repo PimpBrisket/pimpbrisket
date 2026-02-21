@@ -86,6 +86,7 @@ const profileCommandsEl = document.getElementById("profile-commands");
 const profileEarnedEl = document.getElementById("profile-earned");
 const profileTrophiesEl = document.getElementById("profile-trophies");
 const profileJoinedEl = document.getElementById("profile-joined");
+const profileShowcaseSummaryEl = document.getElementById("profile-showcase-summary");
 const trophyDigImageEl = document.getElementById("trophy-dig-image");
 const trophyFishImageEl = document.getElementById("trophy-fish-image");
 const trophyHuntImageEl = document.getElementById("trophy-hunt-image");
@@ -264,6 +265,8 @@ let digAnimationVersion = 0;
 let currentMode = "actions";
 let selectedGambleGame = "";
 let sessionWalletDelta = 0;
+let showcaseDraftSelections = [];
+let showcaseDraftDirty = false;
 let blackjackState = {
   active: false,
   player: [],
@@ -443,6 +446,40 @@ function updateShowcaseButtonVisibility() {
   openShowcaseButton.hidden = !(currentProfile?.showcase?.unlocked === true);
 }
 
+function setProfileFocusMode(enabled) {
+  document.body.classList.toggle("profile-focus", enabled === true);
+}
+
+function closeNonProfilePanels() {
+  const panels = [
+    dailyPanel,
+    achievementsPanel,
+    inventoryPanel,
+    showcasePanel,
+    upgradePanel,
+    shopPanel,
+    devPanel,
+    trophyPanel
+  ];
+  panels.forEach((panel) => {
+    if (panel) panel.hidden = true;
+  });
+}
+
+function syncShowcaseDraftFromProfile() {
+  const shown = Array.isArray(currentProfile?.showcase?.showcasedItems)
+    ? currentProfile.showcase.showcasedItems
+    : [];
+  showcaseDraftSelections = [...shown];
+}
+
+function collectShowcaseDraftFromDom() {
+  if (!showcaseSlotsEl) return;
+  const selects = Array.from(showcaseSlotsEl.querySelectorAll("select"));
+  showcaseDraftSelections = selects.map((select) => String(select.value || "").trim());
+  showcaseDraftDirty = true;
+}
+
 function formatShowcaseEffectText(item) {
   if (!item?.showcase) return "No showcase effect";
   const bits = [];
@@ -550,7 +587,10 @@ function renderShowcasePanel() {
   const items = Array.isArray(currentProfile?.inventory?.items) ? currentProfile.inventory.items : [];
   const slots = Number(showcase.slots || 0);
   const maxSlots = Number(showcase.maxSlots || 0);
-  const shown = Array.isArray(showcase.showcasedItems) ? showcase.showcasedItems : [];
+  if (!showcaseDraftDirty) {
+    syncShowcaseDraftFromProfile();
+  }
+  const shown = showcaseDraftSelections;
   const effects = showcase.effectsByAction || {};
 
   showcaseSummaryEl.textContent =
@@ -587,6 +627,7 @@ function renderShowcasePanel() {
       select.appendChild(option);
     });
     select.value = shown[index] || "";
+    select.addEventListener("change", collectShowcaseDraftFromDom);
     row.appendChild(label);
     row.appendChild(select);
     showcaseSlotsEl.appendChild(row);
@@ -661,6 +702,8 @@ async function triggerDevAction(action, rewardLabel) {
 async function loadInventoryData() {
   const payload = await fetchApi(`/players/${discordUserId}/inventory`);
   if (payload.player) applyPlayerSnapshot(payload.player);
+  showcaseDraftDirty = false;
+  syncShowcaseDraftFromProfile();
   renderInventoryPanel();
   renderShowcasePanel();
   return payload;
@@ -673,6 +716,8 @@ async function sellInventoryItem(itemKey, quantity = null) {
     body: JSON.stringify({ itemKey, quantity })
   });
   applyPlayerSnapshot(payload.player);
+  showcaseDraftDirty = false;
+  syncShowcaseDraftFromProfile();
   renderInventoryPanel();
   renderShowcasePanel();
   renderShopPanel();
@@ -689,23 +734,23 @@ async function purchaseShowcaseSlotFromShop() {
     headers: { "Content-Type": "application/json" }
   });
   applyPlayerSnapshot(payload.player);
+  showcaseDraftDirty = false;
+  syncShowcaseDraftFromProfile();
   renderShopPanel();
   renderShowcasePanel();
   setStatus("Showcase slot purchased.", "tone-success");
 }
 
 async function saveShowcaseSelection() {
-  if (!showcaseSlotsEl) return;
-  const selects = Array.from(showcaseSlotsEl.querySelectorAll("select"));
-  const itemKeys = selects
-    .map((select) => String(select.value || "").trim())
-    .filter(Boolean);
+  const itemKeys = showcaseDraftSelections.filter(Boolean);
   const payload = await fetchApi(`/players/${discordUserId}/showcase`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ itemKeys })
   });
   applyPlayerSnapshot(payload.player);
+  showcaseDraftDirty = false;
+  syncShowcaseDraftFromProfile();
   renderShowcasePanel();
   renderChanceTable(selectedChanceAction);
   setStatus("Showcase saved.", "tone-success");
@@ -841,7 +886,7 @@ function applyPlayerSnapshot(player) {
     renderChanceTable(selectedChanceAction);
   }
   if (inventoryPanel && !inventoryPanel.hidden) renderInventoryPanel();
-  if (showcasePanel && !showcasePanel.hidden) renderShowcasePanel();
+  if (showcasePanel && !showcasePanel.hidden && !showcaseDraftDirty) renderShowcasePanel();
   if (shopPanel && !shopPanel.hidden) renderShopPanel();
 }
 
@@ -1133,6 +1178,19 @@ function setUserAvatar(url) {
   profileAvatarEl.src = url;
 }
 
+function buildProfileShowcaseSummary(profile) {
+  const showcase = profile?.showcase || {};
+  const slots = Number(showcase.slots || 0);
+  const maxSlots = Number(showcase.maxSlots || 0);
+  const shown = Array.isArray(showcase.showcasedItems) ? showcase.showcasedItems : [];
+  const items = Array.isArray(profile?.inventory?.items) ? profile.inventory.items : [];
+  const nameByKey = new Map(items.map((item) => [item.key, item.name]));
+  const shownNames = shown.map((key) => nameByKey.get(key) || key);
+  if (slots <= 0) return "No showcase unlocked";
+  if (shownNames.length <= 0) return `Slots ${slots}/${maxSlots} | No items showcased`;
+  return `Slots ${slots}/${maxSlots} | ${shownNames.join(", ")}`;
+}
+
 function populateProfilePanel(profile) {
   if (!profile) return;
   if (
@@ -1163,6 +1221,9 @@ function populateProfilePanel(profile) {
   profileEarnedEl.textContent = `$${formatCoins(profile.totalMoneyEarned || 0)}`;
   profileTrophiesEl.textContent = `${formatCoins(digCount + fishCount + huntCount)}`;
   profileJoinedEl.textContent = formatDate(profile.createdAt);
+  if (profileShowcaseSummaryEl) {
+    profileShowcaseSummaryEl.textContent = buildProfileShowcaseSummary(profile);
+  }
   populateTrophyPanel(profile);
 }
 
@@ -1215,6 +1276,7 @@ function startCooldownTicker() {
 function startProfileSync() {
   if (profileSyncTimer) clearInterval(profileSyncTimer);
   profileSyncTimer = setInterval(async () => {
+    if (showcasePanel && !showcasePanel.hidden && showcaseDraftDirty) return;
     try {
       await loadProfile();
     } catch (_err) {
@@ -1998,6 +2060,8 @@ function bindActions() {
 function bindModeAndGambling() {
   if (shopButton) {
     shopButton.addEventListener("click", () => {
+      setProfileFocusMode(false);
+      profilePanel.hidden = true;
       if (shopPanel) {
         shopPanel.hidden = false;
         renderShopPanel();
@@ -2126,7 +2190,9 @@ function bindUserMenu() {
   });
 
   openProfileButton.addEventListener("click", () => {
+    closeNonProfilePanels();
     profilePanel.hidden = false;
+    setProfileFocusMode(true);
     closeDropdown();
     if (currentProfile) {
       populateProfilePanel(currentProfile);
@@ -2135,10 +2201,13 @@ function bindUserMenu() {
 
   closeProfileButton.addEventListener("click", () => {
     profilePanel.hidden = true;
+    setProfileFocusMode(false);
   });
 
   if (openDailyButton && dailyPanel && closeDailyButton) {
     openDailyButton.addEventListener("click", async () => {
+      setProfileFocusMode(false);
+      profilePanel.hidden = true;
       dailyPanel.hidden = false;
       closeDropdown();
       try {
@@ -2154,6 +2223,8 @@ function bindUserMenu() {
 
   if (openAchievementsButton && achievementsPanel && closeAchievementsButton) {
     openAchievementsButton.addEventListener("click", async () => {
+      setProfileFocusMode(false);
+      profilePanel.hidden = true;
       achievementsPanel.hidden = false;
       closeDropdown();
       try {
@@ -2169,6 +2240,7 @@ function bindUserMenu() {
 
   if (openInventoryButton && inventoryPanel && closeInventoryButton) {
     openInventoryButton.addEventListener("click", async () => {
+      setProfileFocusMode(false);
       inventoryPanel.hidden = false;
       try {
         await loadInventoryData();
@@ -2183,6 +2255,7 @@ function bindUserMenu() {
 
   if (openUpgradeButton && upgradePanel && closeUpgradeButton) {
     openUpgradeButton.addEventListener("click", async () => {
+      setProfileFocusMode(false);
       upgradePanel.hidden = false;
       try {
         await loadUpgrades();
@@ -2197,6 +2270,7 @@ function bindUserMenu() {
 
   if (openTrophiesButton && trophyPanel && closeTrophiesButton) {
     openTrophiesButton.addEventListener("click", () => {
+      setProfileFocusMode(false);
       trophyPanel.hidden = false;
       if (currentProfile) {
         populateTrophyPanel(currentProfile);
@@ -2209,6 +2283,8 @@ function bindUserMenu() {
 
   if (openShowcaseButton && showcasePanel && closeShowcaseButton) {
     openShowcaseButton.addEventListener("click", async () => {
+      setProfileFocusMode(false);
+      showcaseDraftDirty = false;
       showcasePanel.hidden = false;
       closeDropdown();
       try {
@@ -2219,6 +2295,8 @@ function bindUserMenu() {
     });
     closeShowcaseButton.addEventListener("click", () => {
       showcasePanel.hidden = true;
+      showcaseDraftDirty = false;
+      syncShowcaseDraftFromProfile();
     });
   }
 
