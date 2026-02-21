@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Player Portal | Actions</title>
-    <link rel="stylesheet" href="./play.css?v=5" />
+    <link rel="stylesheet" href="./play.css?v=6" />
   </head>
   <body>
     <main class="page-layout">
@@ -53,6 +53,11 @@
 
       <section class="main-column">
         <header class="panel top">
+          <div class="inventory-corner">
+            <button id="open-inventory-button" class="inventory-button" type="button" aria-label="Open inventory">
+              <span class="backpack-icon" aria-hidden="true"></span>
+            </button>
+          </div>
           <div class="user-corner">
             <button id="user-menu-button" class="user-button" type="button">
               <img
@@ -66,6 +71,7 @@
               <button id="open-profile-button" type="button">Profile</button>
               <button id="open-daily-button" type="button">Daily</button>
               <button id="open-achievements-button" type="button">Achievements</button>
+              <button id="open-showcase-button" type="button" hidden>Showcase</button>
               <button id="open-dev-mode-button" type="button" hidden>Dev Mode</button>
             </div>
           </div>
@@ -121,11 +127,8 @@
               <p id="profile-earned" class="v">$0</p>
             </article>
             <article class="profile-card">
-              <p class="k">Trophies</p>
-              <button id="open-trophies-button" class="trophy-open" type="button">
-                <span id="profile-trophies" class="v">[ ] [ ] [ ]</span>
-                <span class="trophy-open-label">Open Collection</span>
-              </button>
+              <p class="k">Lifetime Trophies</p>
+              <p id="profile-trophies" class="v">0</p>
             </article>
             <article class="profile-card wide">
               <p class="k">Joined</p>
@@ -194,12 +197,42 @@
           <div id="achievements-list" class="achievements-list"></div>
         </section>
 
+        <section id="inventory-panel" class="panel profile-panel" hidden>
+          <div class="profile-header">
+            <h2>Inventory</h2>
+            <button id="close-inventory-button" class="close-profile" type="button">Close</button>
+          </div>
+          <div id="inventory-list" class="inventory-list"></div>
+        </section>
+
         <section id="upgrade-panel" class="panel profile-panel" hidden>
           <div class="profile-header">
             <h2>Upgrades</h2>
             <button id="close-upgrade-button" class="close-profile" type="button">Close</button>
           </div>
           <div id="upgrades-list" class="upgrades-list"></div>
+        </section>
+
+        <section id="shop-panel" class="panel profile-panel" hidden>
+          <div class="profile-header">
+            <h2>Shop</h2>
+            <button id="close-shop-button" class="close-profile" type="button">Close</button>
+          </div>
+          <article class="profile-card">
+            <p class="k">Showcase Upgrade</p>
+            <p id="shop-status" class="v">Loading...</p>
+            <button id="shop-buy-showcase-button" class="close-profile" type="button">Buy</button>
+          </article>
+        </section>
+
+        <section id="showcase-panel" class="panel profile-panel" hidden>
+          <div class="profile-header">
+            <h2>Showcase</h2>
+            <button id="close-showcase-button" class="close-profile" type="button">Close</button>
+          </div>
+          <p id="showcase-summary" class="muted"></p>
+          <div id="showcase-slots" class="showcase-slots"></div>
+          <button id="save-showcase-button" class="close-profile" type="button">Save Showcase</button>
         </section>
 
         <section id="dev-panel" class="panel profile-panel" hidden>
@@ -240,6 +273,22 @@
               <div class="dev-row">
                 <select id="dev-trigger-hunt-select"></select>
                 <button id="dev-trigger-hunt-button" class="close-profile" type="button">Play Hunt</button>
+              </div>
+              <div class="dev-row">
+                <select id="dev-upgrade-action-select">
+                  <option value="dig">Dig</option>
+                  <option value="fish">Fish</option>
+                  <option value="hunt">Hunt</option>
+                </select>
+                <select id="dev-upgrade-key-select">
+                  <option value="cash">Cash</option>
+                  <option value="xp">XP</option>
+                  <option value="drop">Drop</option>
+                </select>
+                <input id="dev-upgrade-level-input" type="number" min="0" max="1000" value="0" />
+                <button id="dev-set-upgrade-level-button" class="close-profile" type="button">
+                  Set Upgrade Level
+                </button>
               </div>
             </article>
             <article id="dev-gambling-tools" class="profile-card wide" hidden>
@@ -414,6 +463,6 @@
         </section>
       </section>
     </main>
-    <script src="./play.js?v=14"></script>
+    <script src="./play.js?v=15"></script>
   </body>
 </html>
