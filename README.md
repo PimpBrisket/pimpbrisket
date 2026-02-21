@@ -138,3 +138,13 @@ Expected shape:
 ```json
 {"ok":true,"timestamp":"...","uptimeSec":123,"db":{"ok":true}}
 ```
+
+## Performance Notes
+
+- Optimization handoff doc: `docs/OPTIMIZATION_PLAYBOOK.md`
+- Lightweight sync endpoint (for polling): `GET /players/:discordUserId/sync?since=<updatedAtMs>`
+- In production, set `ENABLE_REQUEST_LOGS=false` in `api/.env`
+- Optional health metrics snapshot: `GET /health?metrics=1`
+- Optional metrics endpoints (if `METRICS_EXPOSE_ENDPOINT=true`):
+  - `GET /metrics/http?limit=30`
+  - `POST /metrics/http/reset`

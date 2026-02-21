@@ -325,6 +325,27 @@ const PLAYER_SELECT_SQL = `SELECT
  FROM players
  WHERE "discordUserId" = $1`;
 
+const PLAYER_SYNC_SELECT_SQL = `SELECT
+  "discordUserId",
+  money,
+  "createdAt",
+  "updatedAt",
+  "digCooldownUntil",
+  "fishCooldownUntil",
+  "huntCooldownUntil",
+  xp,
+  "totalXpEarned",
+  level,
+  "totalCommandsUsed",
+  "totalMoneyEarned",
+  "digTrophyCount",
+  "fishTrophyCount",
+  "huntTrophyCount",
+  "discordUsername",
+  "discordAvatarHash"
+ FROM players
+ WHERE "discordUserId" = $1`;
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -525,18 +546,36 @@ function levelRewardCoins(level) {
   return 30 + level * 10;
 }
 
+function readPositiveIntEnvValue(value, fallback) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) return fallback;
+  return parsed;
+}
+
 function createDatabase(connectionString) {
+  const poolMax = readPositiveIntEnvValue(process.env.DB_POOL_MAX, 10);
+  const idleTimeoutMillis = readPositiveIntEnvValue(
+    process.env.DB_POOL_IDLE_TIMEOUT_MS,
+    30_000
+  );
+  const connectionTimeoutMillis = readPositiveIntEnvValue(
+    process.env.DB_POOL_CONNECTION_TIMEOUT_MS,
+    10_000
+  );
+
   return new Pool({
     connectionString,
+    max: poolMax,
+    idleTimeoutMillis,
+    connectionTimeoutMillis,
     ssl: connectionString.includes("localhost")
       ? false
       : { rejectUnauthorized: false }
   });
 }
 
-async function getPlayerByDiscordId(db, discordUserId, client = db) {
-  const result = await client.query(PLAYER_SELECT_SQL, [discordUserId]);
-  const row = result.rows[0] || null;
+function hydratePlayerRow(row) {
   if (!row) return null;
   const inventory = sanitizeInventory(row.inventory || {});
   const showcaseSlots = sanitizeShowcaseSlots(row.showcaseSlots);
@@ -554,6 +593,38 @@ async function getPlayerByDiscordId(db, discordUserId, client = db) {
     inventory,
     showcaseSlots,
     showcasedItems
+  };
+}
+
+async function getPlayerByDiscordId(db, discordUserId, client = db) {
+  const result = await client.query(PLAYER_SELECT_SQL, [discordUserId]);
+  return hydratePlayerRow(result.rows[0] || null);
+}
+
+async function getPlayerByDiscordIdForUpdate(client, discordUserId) {
+  const result = await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
+  return hydratePlayerRow(result.rows[0] || null);
+}
+
+async function getPlayerSyncByDiscordId(db, discordUserId, client = db) {
+  const result = await client.query(PLAYER_SYNC_SELECT_SQL, [discordUserId]);
+  const row = result.rows[0] || null;
+  if (!row) return null;
+
+  return {
+    ...row,
+    money: Number(row.money || 0),
+    digCooldownUntil: Number(row.digCooldownUntil || 0),
+    fishCooldownUntil: Number(row.fishCooldownUntil || 0),
+    huntCooldownUntil: Number(row.huntCooldownUntil || 0),
+    xp: Number(row.xp || 0),
+    totalXpEarned: Number(row.totalXpEarned || 0),
+    level: Number(row.level || 1),
+    totalCommandsUsed: Number(row.totalCommandsUsed || 0),
+    totalMoneyEarned: Number(row.totalMoneyEarned || 0),
+    digTrophyCount: Number(row.digTrophyCount || 0),
+    fishTrophyCount: Number(row.fishTrophyCount || 0),
+    huntTrophyCount: Number(row.huntTrophyCount || 0)
   };
 }
 
@@ -1060,17 +1131,19 @@ async function grantPendingAchievements(client, player) {
     };
   }
 
-  await client.query(
+  const updateResult = await client.query(
     `UPDATE players
      SET money = money + $1,
          "totalMoneyEarned" = "totalMoneyEarned" + $1,
          "achievementState" = $2::jsonb,
          "updatedAt" = NOW()
-     WHERE "discordUserId" = $3`,
+     WHERE "discordUserId" = $3
+     RETURNING *`,
     [totalGranted, JSON.stringify(state), player.discordUserId]
   );
 
-  const updated = await getPlayerByDiscordId(client, player.discordUserId, client);
+  const updated = hydratePlayerRow(updateResult.rows[0] || null);
+  if (!updated) throw new Error("Player not found after achievement grant update");
   return {
     player: updated,
     grantedCoins: totalGranted,
@@ -1149,11 +1222,8 @@ async function lockActionCooldown(db, discordUserId, action) {
       [discordUserId]
     );
 
-    const currentPlayerResult = await client.query(
-      `${PLAYER_SELECT_SQL} FOR UPDATE`,
-      [discordUserId]
-    );
-    const playerBefore = currentPlayerResult.rows[0];
+    const playerBefore = await getPlayerByDiscordIdForUpdate(client, discordUserId);
+    if (!playerBefore) throw new Error("Player not found");
     const now = Date.now();
     const cooldownUntil = Number(playerBefore[actionConfig.cooldownColumn]) || 0;
     if (cooldownUntil > now) {
@@ -1167,14 +1237,16 @@ async function lockActionCooldown(db, discordUserId, action) {
     }
 
     const nextCooldownUntil = now + ACTION_COOLDOWN_MS;
-    await client.query(
+    const updateResult = await client.query(
       `UPDATE players
        SET "${actionConfig.cooldownColumn}" = $1,
            "updatedAt" = NOW()
-       WHERE "discordUserId" = $2`,
+       WHERE "discordUserId" = $2
+       RETURNING *`,
       [nextCooldownUntil, discordUserId]
     );
-    const playerAfter = await getPlayerByDiscordId(db, discordUserId, client);
+    const playerAfter = hydratePlayerRow(updateResult.rows[0] || null);
+    if (!playerAfter) throw new Error("Player not found after cooldown lock update");
     await client.query("COMMIT");
     return {
       ok: true,
@@ -1212,11 +1284,8 @@ async function performAction(db, discordUserId, action, options = {}) {
       [discordUserId]
     );
 
-    const currentPlayerResult = await client.query(
-      `${PLAYER_SELECT_SQL} FOR UPDATE`,
-      [discordUserId]
-    );
-    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerBefore = await getPlayerByDiscordIdForUpdate(client, discordUserId);
+    if (!playerBefore) throw new Error("Player not found");
     const actionConfig = getEffectiveActionConfigForPlayer(playerBefore, action);
     const upgrades = sanitizeUpgrades(playerBefore.upgrades || {});
     const upgradeEffects = getUpgradeEffects(upgrades, action);
@@ -1314,7 +1383,7 @@ async function performAction(db, discordUserId, action, options = {}) {
         ? cooldownUntil
         : now + ACTION_COOLDOWN_MS;
 
-    await client.query(
+    const updateResult = await client.query(
       `UPDATE players
        SET money = money + $1,
            xp = $2,
@@ -1331,7 +1400,8 @@ async function performAction(db, discordUserId, action, options = {}) {
            "totalBonusRewards" = "totalBonusRewards" + $12,
            inventory = $13::jsonb,
            "updatedAt" = NOW()
-       WHERE "discordUserId" = $14`,
+       WHERE "discordUserId" = $14
+       RETURNING *`,
       [
         appliedRewardCoins,
         nextXp,
@@ -1349,8 +1419,8 @@ async function performAction(db, discordUserId, action, options = {}) {
         discordUserId
       ]
     );
-
-    const playerAfterRaw = await getPlayerByDiscordId(db, discordUserId, client);
+    const playerAfterRaw = hydratePlayerRow(updateResult.rows[0] || null);
+    if (!playerAfterRaw) throw new Error("Player not found after action update");
     const achievementGrant = await grantPendingAchievements(client, playerAfterRaw);
     const playerAfter = achievementGrant.player;
     await client.query("COMMIT");
@@ -1405,22 +1475,26 @@ async function setPlayerTimezone(db, discordUserId, timezone) {
       ]
     );
 
-    const player = await getPlayerByDiscordId(client, discordUserId, client);
+    const player = await getPlayerByDiscordIdForUpdate(client, discordUserId);
+    if (!player) throw new Error("Player not found");
     if (player?.timezone && player.timezone !== safeTz) {
       throw new Error("Timezone already set and cannot be changed");
     }
 
+    let updated = player;
     if (!player?.timezone) {
-      await client.query(
+      const updateResult = await client.query(
         `UPDATE players
          SET timezone = $1,
              "updatedAt" = NOW()
-         WHERE "discordUserId" = $2`,
+         WHERE "discordUserId" = $2
+         RETURNING *`,
         [safeTz, discordUserId]
       );
+      updated = hydratePlayerRow(updateResult.rows[0] || null);
+      if (!updated) throw new Error("Player not found after timezone update");
     }
 
-    const updated = await getPlayerByDiscordId(client, discordUserId, client);
     await client.query("COMMIT");
     return updated;
   } catch (err) {
@@ -1458,11 +1532,8 @@ async function claimDailyReward(db, discordUserId) {
       [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
     );
 
-    const currentPlayerResult = await client.query(
-      `${PLAYER_SELECT_SQL} FOR UPDATE`,
-      [discordUserId]
-    );
-    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerBefore = await getPlayerByDiscordIdForUpdate(client, discordUserId);
+    if (!playerBefore) throw new Error("Player not found");
     const now = Date.now();
     if (!playerBefore?.timezone) {
       await client.query("COMMIT");
@@ -1494,18 +1565,19 @@ async function claimDailyReward(db, discordUserId) {
     );
     const appliedRewardCoins = isMoneyFrozen(playerBefore) ? 0 : rewardCoins;
 
-    await client.query(
+    const updateResult = await client.query(
       `UPDATE players
        SET money = money + $1,
            "totalMoneyEarned" = "totalMoneyEarned" + $1,
            "dailyClaimDay" = $2,
            "dailyStreak" = $3,
            "updatedAt" = NOW()
-       WHERE "discordUserId" = $4`,
+       WHERE "discordUserId" = $4
+       RETURNING *`,
       [appliedRewardCoins, dailyState.currentDay, nextStreak, discordUserId]
     );
-
-    const playerAfterDaily = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerAfterDaily = hydratePlayerRow(updateResult.rows[0] || null);
+    if (!playerAfterDaily) throw new Error("Player not found after daily claim update");
     const achievementGrant = await grantPendingAchievements(client, playerAfterDaily);
     await client.query("COMMIT");
     return {
@@ -1534,11 +1606,8 @@ async function claimDailyChallengeReward(db, discordUserId) {
       [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
     );
 
-    const currentPlayerResult = await client.query(
-      `${PLAYER_SELECT_SQL} FOR UPDATE`,
-      [discordUserId]
-    );
-    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerBefore = await getPlayerByDiscordIdForUpdate(client, discordUserId);
+    if (!playerBefore) throw new Error("Player not found");
     const now = Date.now();
     if (!playerBefore?.timezone) {
       await client.query("COMMIT");
@@ -1570,7 +1639,7 @@ async function claimDailyChallengeReward(db, discordUserId) {
     );
     const appliedRewardCoins = isMoneyFrozen(playerBefore) ? 0 : rewardCoins;
 
-    await client.query(
+    const updateResult = await client.query(
       `UPDATE players
        SET money = money + $1,
            "totalMoneyEarned" = "totalMoneyEarned" + $1,
@@ -1578,11 +1647,12 @@ async function claimDailyChallengeReward(db, discordUserId) {
            "dailyTaskStreak" = $3,
            "dailyTaskDay" = $2,
            "updatedAt" = NOW()
-       WHERE "discordUserId" = $4`,
+       WHERE "discordUserId" = $4
+       RETURNING *`,
       [appliedRewardCoins, dailyState.currentDay, nextStreak, discordUserId]
     );
-
-    const playerAfterClaim = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerAfterClaim = hydratePlayerRow(updateResult.rows[0] || null);
+    if (!playerAfterClaim) throw new Error("Player not found after challenge claim update");
     const achievementGrant = await grantPendingAchievements(client, playerAfterClaim);
     await client.query("COMMIT");
     return {
@@ -1628,8 +1698,8 @@ async function settleGamblingResult(
       [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
     );
 
-    await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
-    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerBefore = await getPlayerByDiscordIdForUpdate(client, discordUserId);
+    if (!playerBefore) throw new Error("Player not found");
     if (Number(playerBefore.level || 1) < 5) {
       await client.query("COMMIT");
       return {
@@ -1659,7 +1729,7 @@ async function settleGamblingResult(
         : dailyState.challenge.interactions;
     const positiveGain = Math.max(0, appliedCoinDelta);
 
-    await client.query(
+    const updateResult = await client.query(
       `UPDATE players
        SET money = GREATEST(0, money + $1),
            "totalMoneyEarned" = "totalMoneyEarned" + $2,
@@ -1669,7 +1739,8 @@ async function settleGamblingResult(
            "dailyTaskDay" = $6,
            "dailyTaskInteractions" = $7,
            "updatedAt" = NOW()
-       WHERE "discordUserId" = $8`,
+       WHERE "discordUserId" = $8
+       RETURNING *`,
       [
         appliedCoinDelta,
         positiveGain,
@@ -1681,8 +1752,8 @@ async function settleGamblingResult(
         discordUserId
       ]
     );
-
-    const playerAfterResult = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerAfterResult = hydratePlayerRow(updateResult.rows[0] || null);
+    if (!playerAfterResult) throw new Error("Player not found after gambling update");
     const achievementGrant = await grantPendingAchievements(client, playerAfterResult);
     await client.query("COMMIT");
     return {
@@ -1712,8 +1783,8 @@ async function purchaseUpgrade(db, discordUserId, action, upgradeKey) {
       [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
     );
 
-    await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
-    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerBefore = await getPlayerByDiscordIdForUpdate(client, discordUserId);
+    if (!playerBefore) throw new Error("Player not found");
     const freezeMoney = isMoneyFrozen(playerBefore);
     const upgrades = sanitizeUpgrades(playerBefore.upgrades || {});
     const currentLevel = upgrades[action][upgradeKey];
@@ -1745,17 +1816,18 @@ async function purchaseUpgrade(db, discordUserId, action, upgradeKey) {
     }
 
     upgrades[action][upgradeKey] = currentLevel + 1;
-    await client.query(
+    const updateResult = await client.query(
       `UPDATE players
        SET money = money - $1,
            upgrades = $2::jsonb,
            "${purchaseColumn}" = "${purchaseColumn}" + 1,
            "updatedAt" = NOW()
-       WHERE "discordUserId" = $3`,
+       WHERE "discordUserId" = $3
+       RETURNING *`,
       [freezeMoney ? 0 : cost, JSON.stringify(upgrades), discordUserId]
     );
-
-    const playerAfterRaw = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerAfterRaw = hydratePlayerRow(updateResult.rows[0] || null);
+    if (!playerAfterRaw) throw new Error("Player not found after upgrade purchase update");
     const achievementGrant = await grantPendingAchievements(client, playerAfterRaw);
     const playerAfter = achievementGrant.player;
     await client.query("COMMIT");
@@ -1796,8 +1868,8 @@ async function purchaseUpgradeMax(db, discordUserId, action, upgradeKey) {
       [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
     );
 
-    await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
-    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerBefore = await getPlayerByDiscordIdForUpdate(client, discordUserId);
+    if (!playerBefore) throw new Error("Player not found");
     const freezeMoney = isMoneyFrozen(playerBefore);
     const upgrades = sanitizeUpgrades(playerBefore.upgrades || {});
     const currentLevel = upgrades[action][upgradeKey];
@@ -1841,17 +1913,18 @@ async function purchaseUpgradeMax(db, discordUserId, action, upgradeKey) {
     }
 
     upgrades[action][upgradeKey] = nextLevel;
-    await client.query(
+    const updateResult = await client.query(
       `UPDATE players
        SET money = money - $1,
            upgrades = $2::jsonb,
            "${purchaseColumn}" = "${purchaseColumn}" + $3,
            "updatedAt" = NOW()
-       WHERE "discordUserId" = $4`,
+       WHERE "discordUserId" = $4
+       RETURNING *`,
       [freezeMoney ? 0 : totalCost, JSON.stringify(upgrades), purchasedLevels, discordUserId]
     );
-
-    const playerAfterRaw = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerAfterRaw = hydratePlayerRow(updateResult.rows[0] || null);
+    if (!playerAfterRaw) throw new Error("Player not found after max upgrade purchase update");
     const achievementGrant = await grantPendingAchievements(client, playerAfterRaw);
     const playerAfter = achievementGrant.player;
     await client.query("COMMIT");
@@ -1882,8 +1955,8 @@ async function sellInventoryItem(db, discordUserId, itemKey, quantity = null) {
        ON CONFLICT ("discordUserId") DO NOTHING`,
       [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
     );
-    await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
-    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerBefore = await getPlayerByDiscordIdForUpdate(client, discordUserId);
+    if (!playerBefore) throw new Error("Player not found");
     const inventory = sanitizeInventory(playerBefore.inventory || {});
     const ownedCount = Math.max(0, Math.floor(Number(inventory[itemKey]) || 0));
     if (ownedCount <= 0) {
@@ -1927,18 +2000,19 @@ async function sellInventoryItem(db, discordUserId, itemKey, quantity = null) {
       inventory
     );
 
-    await client.query(
+    const updateResult = await client.query(
       `UPDATE players
        SET money = money + $1,
            "totalMoneyEarned" = "totalMoneyEarned" + $1,
            inventory = $2::jsonb,
            "showcasedItems" = $3::jsonb,
            "updatedAt" = NOW()
-       WHERE "discordUserId" = $4`,
+       WHERE "discordUserId" = $4
+       RETURNING *`,
       [appliedCoins, JSON.stringify(inventory), JSON.stringify(showcasedItems), discordUserId]
     );
-
-    const playerAfter = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerAfter = hydratePlayerRow(updateResult.rows[0] || null);
+    if (!playerAfter) throw new Error("Player not found after inventory sell update");
     await client.query("COMMIT");
     return {
       ok: true,
@@ -1964,8 +2038,8 @@ async function purchaseShowcaseSlot(db, discordUserId) {
        ON CONFLICT ("discordUserId") DO NOTHING`,
       [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
     );
-    await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
-    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerBefore = await getPlayerByDiscordIdForUpdate(client, discordUserId);
+    if (!playerBefore) throw new Error("Player not found");
     const currentSlots = sanitizeShowcaseSlots(playerBefore.showcaseSlots);
     const nextCost = getNextShowcaseSlotCost(currentSlots);
     if (nextCost === null) {
@@ -1983,15 +2057,17 @@ async function purchaseShowcaseSlot(db, discordUserId) {
       };
     }
 
-    await client.query(
+    const updateResult = await client.query(
       `UPDATE players
        SET money = money - $1,
            "showcaseSlots" = $2,
            "updatedAt" = NOW()
-       WHERE "discordUserId" = $3`,
+       WHERE "discordUserId" = $3
+       RETURNING *`,
       [freezeMoney ? 0 : nextCost, currentSlots + 1, discordUserId]
     );
-    const playerAfter = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerAfter = hydratePlayerRow(updateResult.rows[0] || null);
+    if (!playerAfter) throw new Error("Player not found after showcase slot purchase update");
     await client.query("COMMIT");
     return {
       ok: true,
@@ -2016,20 +2092,22 @@ async function setShowcasedItems(db, discordUserId, itemKeys = []) {
        ON CONFLICT ("discordUserId") DO NOTHING`,
       [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
     );
-    await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
-    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerBefore = await getPlayerByDiscordIdForUpdate(client, discordUserId);
+    if (!playerBefore) throw new Error("Player not found");
     const slots = sanitizeShowcaseSlots(playerBefore.showcaseSlots);
     const inventory = sanitizeInventory(playerBefore.inventory || {});
     const nextItems = sanitizeShowcasedItems(itemKeys, slots, inventory);
 
-    await client.query(
+    const updateResult = await client.query(
       `UPDATE players
        SET "showcasedItems" = $1::jsonb,
            "updatedAt" = NOW()
-       WHERE "discordUserId" = $2`,
+       WHERE "discordUserId" = $2
+       RETURNING *`,
       [JSON.stringify(nextItems), discordUserId]
     );
-    const playerAfter = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerAfter = hydratePlayerRow(updateResult.rows[0] || null);
+    if (!playerAfter) throw new Error("Player not found after showcase update");
     await client.query("COMMIT");
     return { ok: true, player: playerAfter };
   } catch (err) {
@@ -2057,19 +2135,21 @@ async function setPlayerUpgradeLevel(db, discordUserId, action, upgradeKey, leve
        ON CONFLICT ("discordUserId") DO NOTHING`,
       [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
     );
-    await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
-    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerBefore = await getPlayerByDiscordIdForUpdate(client, discordUserId);
+    if (!playerBefore) throw new Error("Player not found");
     const upgrades = sanitizeUpgrades(playerBefore.upgrades || {});
     upgrades[action][upgradeKey] = targetLevel;
 
-    await client.query(
+    const updateResult = await client.query(
       `UPDATE players
        SET upgrades = $1::jsonb,
            "updatedAt" = NOW()
-       WHERE "discordUserId" = $2`,
+       WHERE "discordUserId" = $2
+       RETURNING *`,
       [JSON.stringify(upgrades), discordUserId]
     );
-    const playerAfter = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerAfter = hydratePlayerRow(updateResult.rows[0] || null);
+    if (!playerAfter) throw new Error("Player not found after dev upgrade set");
     await client.query("COMMIT");
     return {
       ok: true,
@@ -2091,6 +2171,7 @@ module.exports = {
   createDatabase,
   initDatabase,
   getPlayerByDiscordId,
+  getPlayerSyncByDiscordId,
   registerPlayer,
   adjustMoney,
   setPlayerMoneyExact,

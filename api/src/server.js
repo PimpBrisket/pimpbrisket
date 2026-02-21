@@ -9,6 +9,7 @@ const {
   createDatabase,
   initDatabase,
   getPlayerByDiscordId,
+  getPlayerSyncByDiscordId,
   registerPlayer,
   adjustMoney,
   setPlayerMoneyExact,
@@ -148,9 +149,141 @@ function createFixedWindowRateLimiter({
   };
 }
 
+function percentileFromSorted(sortedValues, percentile) {
+  if (sortedValues.length <= 0) return 0;
+  const index = Math.max(
+    0,
+    Math.min(
+      sortedValues.length - 1,
+      Math.ceil((percentile / 100) * sortedValues.length) - 1
+    )
+  );
+  return sortedValues[index];
+}
+
+function toFixedMs(value) {
+  return Number(value.toFixed(1));
+}
+
+function normalizeRoutePath(req) {
+  const routePath = req.route?.path;
+  if (typeof routePath === "string") return routePath;
+  if (Array.isArray(routePath)) return routePath.join("|");
+  const path = typeof req.path === "string" ? req.path : "";
+  if (path) return path;
+  return String(req.originalUrl || "/").split("?")[0] || "/";
+}
+
+function getRouteLabel(req) {
+  const baseUrl = typeof req.baseUrl === "string" ? req.baseUrl : "";
+  return `${req.method} ${baseUrl}${normalizeRoutePath(req)}`;
+}
+
+function createRouteStats(sampleSize) {
+  return {
+    requests: 0,
+    totalMs: 0,
+    minMs: Number.POSITIVE_INFINITY,
+    maxMs: 0,
+    samples: new Array(sampleSize),
+    sampleCount: 0,
+    sampleIndex: 0,
+    status2xx: 0,
+    status3xx: 0,
+    status4xx: 0,
+    status5xx: 0
+  };
+}
+
+function createHttpLatencyTracker({ sampleSize, maxRoutes }) {
+  const startedAtMs = Date.now();
+  const routes = new Map();
+  const overflowRouteLabel = "__overflow__";
+
+  function getOrCreateRouteStats(routeLabel) {
+    if (routes.has(routeLabel)) return routes.get(routeLabel);
+    if (routes.size >= maxRoutes) {
+      if (routes.has(overflowRouteLabel)) return routes.get(overflowRouteLabel);
+      const overflowStats = createRouteStats(sampleSize);
+      routes.set(overflowRouteLabel, overflowStats);
+      return overflowStats;
+    }
+    const stats = createRouteStats(sampleSize);
+    routes.set(routeLabel, stats);
+    return stats;
+  }
+
+  function record(routeLabel, durationMs, statusCode) {
+    const stats = getOrCreateRouteStats(routeLabel);
+    const value = Number.isFinite(durationMs) && durationMs >= 0 ? durationMs : 0;
+
+    stats.requests += 1;
+    stats.totalMs += value;
+    if (value < stats.minMs) stats.minMs = value;
+    if (value > stats.maxMs) stats.maxMs = value;
+
+    stats.samples[stats.sampleIndex] = value;
+    stats.sampleIndex = (stats.sampleIndex + 1) % sampleSize;
+    if (stats.sampleCount < sampleSize) stats.sampleCount += 1;
+
+    if (statusCode >= 500) stats.status5xx += 1;
+    else if (statusCode >= 400) stats.status4xx += 1;
+    else if (statusCode >= 300) stats.status3xx += 1;
+    else stats.status2xx += 1;
+  }
+
+  function summarizeRoute(routeLabel, stats) {
+    const sampleValues = stats.samples
+      .slice(0, stats.sampleCount)
+      .sort((a, b) => a - b);
+    const avgMs = stats.requests > 0 ? stats.totalMs / stats.requests : 0;
+    return {
+      route: routeLabel,
+      requests: stats.requests,
+      avgMs: toFixedMs(avgMs),
+      minMs: stats.requests > 0 ? toFixedMs(stats.minMs) : 0,
+      p50Ms: toFixedMs(percentileFromSorted(sampleValues, 50)),
+      p95Ms: toFixedMs(percentileFromSorted(sampleValues, 95)),
+      p99Ms: toFixedMs(percentileFromSorted(sampleValues, 99)),
+      maxMs: toFixedMs(stats.maxMs),
+      status2xx: stats.status2xx,
+      status3xx: stats.status3xx,
+      status4xx: stats.status4xx,
+      status5xx: stats.status5xx
+    };
+  }
+
+  function snapshot({ limit = 20 } = {}) {
+    const rows = Array.from(routes.entries()).map(([routeLabel, stats]) =>
+      summarizeRoute(routeLabel, stats)
+    );
+    rows.sort((a, b) => b.requests - a.requests || b.p95Ms - a.p95Ms);
+    const safeLimit = Math.max(1, Math.min(500, Number(limit) || 20));
+    const totalRequests = rows.reduce((sum, row) => sum + row.requests, 0);
+    return {
+      since: new Date(startedAtMs).toISOString(),
+      uptimeSec: Math.floor((Date.now() - startedAtMs) / 1000),
+      routeCount: rows.length,
+      totalRequests,
+      routes: rows.slice(0, safeLimit)
+    };
+  }
+
+  function reset() {
+    routes.clear();
+  }
+
+  return {
+    record,
+    snapshot,
+    reset
+  };
+}
+
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
+const NODE_ENV = (process.env.NODE_ENV || "development").toLowerCase();
 const DATABASE_URL = process.env.DATABASE_URL || "";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "*";
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || "";
@@ -158,7 +291,10 @@ const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || "";
 const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || "";
 const WEB_BASE_URL = process.env.WEB_BASE_URL || "http://localhost:5173";
 const WEB_PLAY_PATH = process.env.WEB_PLAY_PATH || "/play";
-const ENABLE_REQUEST_LOGS = process.env.ENABLE_REQUEST_LOGS !== "false";
+const ENABLE_REQUEST_LOGS =
+  process.env.ENABLE_REQUEST_LOGS !== undefined
+    ? process.env.ENABLE_REQUEST_LOGS === "true"
+    : NODE_ENV !== "production";
 const RATE_LIMIT_WINDOW_MS = parsePositiveIntEnv("RATE_LIMIT_WINDOW_MS", 10_000);
 const RATE_LIMIT_MAX_REQUESTS_PER_IP = parsePositiveIntEnv(
   "RATE_LIMIT_MAX_REQUESTS_PER_IP",
@@ -168,9 +304,21 @@ const RATE_LIMIT_MAX_ACTIONS_PER_USER = parsePositiveIntEnv(
   "RATE_LIMIT_MAX_ACTIONS_PER_USER",
   8
 );
+const METRICS_ENABLED = process.env.METRICS_ENABLED !== "false";
+const METRICS_LOG_INTERVAL_MS = parsePositiveIntEnv("METRICS_LOG_INTERVAL_MS", 60_000);
+const METRICS_SAMPLE_SIZE = parsePositiveIntEnv("METRICS_SAMPLE_SIZE", 256);
+const METRICS_MAX_ROUTES = parsePositiveIntEnv("METRICS_MAX_ROUTES", 200);
+const METRICS_EXPOSE_ENDPOINT = process.env.METRICS_EXPOSE_ENDPOINT === "true";
 const DEV_OWNER_DISCORD_USER_ID = process.env.DEV_OWNER_DISCORD_USER_ID || "931015893377482854";
 const oauthStateStore = new Map();
 const actionLockTokenStore = new Map();
+const httpMetrics = METRICS_ENABLED
+  ? createHttpLatencyTracker({
+      sampleSize: METRICS_SAMPLE_SIZE,
+      maxRoutes: METRICS_MAX_ROUTES
+    })
+  : null;
+let metricsLogTimer = null;
 
 validateStartupConfig({
   PORT,
@@ -189,8 +337,20 @@ const corsOriginOption =
     ? true
     : allowedOrigins;
 
+app.disable("x-powered-by");
 app.use(cors({ origin: corsOriginOption }));
 app.use(express.json({ limit: "1mb" }));
+
+if (httpMetrics) {
+  app.use((req, res, next) => {
+    const startedAt = process.hrtime.bigint();
+    res.on("finish", () => {
+      const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      httpMetrics.record(getRouteLabel(req), durationMs, res.statusCode);
+    });
+    next();
+  });
+}
 
 if (ENABLE_REQUEST_LOGS) {
   app.use((req, res, next) => {
@@ -248,6 +408,11 @@ function getDiscordAvatarUrl(discordUserId, avatarHash) {
   } catch (_err) {
     return "https://cdn.discordapp.com/embed/avatars/0.png";
   }
+}
+
+function toTimestampMs(value) {
+  const ts = new Date(value).getTime();
+  return Number.isFinite(ts) ? ts : 0;
 }
 
 function toPublicPlayer(player) {
@@ -326,6 +491,65 @@ function toPublicPlayer(player) {
   };
 }
 
+function toSyncPlayer(player) {
+  if (!player) return null;
+
+  const level = Math.min(MAX_LEVEL, Math.max(1, Number(player.level) || 1));
+  const xp = Math.max(0, Number(player.xp) || 0);
+  const xpToNextLevel = level < MAX_LEVEL ? xpRequiredForLevel(level) : 0;
+  const nextLevelRewardCoins =
+    level < MAX_LEVEL ? levelRewardCoins(level + 1) : 0;
+  const digTrophyCount = Number(player.digTrophyCount || 0);
+  const fishTrophyCount = Number(player.fishTrophyCount || 0);
+  const huntTrophyCount = Number(player.huntTrophyCount || 0);
+
+  return {
+    discordUserId: player.discordUserId,
+    discordUsername: player.discordUsername || null,
+    discordAvatarUrl: getDiscordAvatarUrl(
+      player.discordUserId,
+      player.discordAvatarHash
+    ),
+    createdAt: player.createdAt,
+    updatedAt: player.updatedAt,
+    updatedAtMs: toTimestampMs(player.updatedAt),
+    money: Number(player.money || 0),
+    level,
+    xp,
+    xpToNextLevel,
+    maxLevel: MAX_LEVEL,
+    nextLevelRewardCoins,
+    totalXpEarned: Number(player.totalXpEarned || 0),
+    totalCommandsUsed: Number(player.totalCommandsUsed || 0),
+    totalMoneyEarned: Number(player.totalMoneyEarned || 0),
+    digCooldownUntil: Number(player.digCooldownUntil || 0),
+    fishCooldownUntil: Number(player.fishCooldownUntil || 0),
+    huntCooldownUntil: Number(player.huntCooldownUntil || 0),
+    trophyCollection: {
+      dig: {
+        key: "collectors_greed",
+        name: "Collectors Greed",
+        image: "/assets/dig-trophy.png",
+        count: digTrophyCount
+      },
+      fish: {
+        key: "midnight_ocean",
+        name: "Midnight Ocean",
+        image: "/assets/fish-trophy.png",
+        count: fishTrophyCount
+      },
+      hunt: {
+        key: "many_heads",
+        name: "Many Heads",
+        image: "/assets/hunt-trophy.png",
+        count: huntTrophyCount
+      },
+      placeholderImage: "/assets/null_trophy.png"
+    },
+    totalTrophies: digTrophyCount + fishTrophyCount + huntTrophyCount
+  };
+}
+
 function buildUrl(baseUrl, params = {}) {
   const url = new URL(baseUrl);
   Object.entries(params).forEach(([key, value]) => {
@@ -342,6 +566,10 @@ function buildWebUrl(pathname = "/", params = {}) {
   const cleanPath = `/${String(pathname || "/").replace(/^\/+/, "")}`;
   base.pathname = `${cleanBasePath}${cleanPath}`;
   return buildUrl(base.toString(), params);
+}
+
+function setMetadataCacheHeaders(res, maxAgeSec) {
+  res.set("Cache-Control", `public, max-age=${maxAgeSec}, s-maxage=${maxAgeSec}`);
 }
 
 function getOAuthConfigError() {
@@ -374,7 +602,7 @@ async function pingDatabase() {
   }
 }
 
-app.get("/health", async (_req, res) => {
+app.get("/health", async (req, res) => {
   const dbStatus = await pingDatabase();
   const payload = {
     ok: dbStatus.ok,
@@ -382,12 +610,38 @@ app.get("/health", async (_req, res) => {
     uptimeSec: Math.floor(process.uptime()),
     db: dbStatus.ok ? { ok: true } : dbStatus
   };
+  if (httpMetrics && String(req.query?.metrics || "") === "1") {
+    payload.http = httpMetrics.snapshot({ limit: 8 });
+  }
 
   if (!dbStatus.ok) return res.status(503).json(payload);
   return res.json(payload);
 });
 
+if (METRICS_EXPOSE_ENDPOINT) {
+  app.get("/metrics/http", (_req, res) => {
+    if (!httpMetrics) {
+      return res.status(503).json({ error: "HTTP metrics are disabled" });
+    }
+    const requestedLimit = Number(_req.query?.limit || 30);
+    const limit =
+      Number.isInteger(requestedLimit) && requestedLimit > 0
+        ? Math.min(500, requestedLimit)
+        : 30;
+    return res.json(httpMetrics.snapshot({ limit }));
+  });
+
+  app.post("/metrics/http/reset", (_req, res) => {
+    if (!httpMetrics) {
+      return res.status(503).json({ error: "HTTP metrics are disabled" });
+    }
+    httpMetrics.reset();
+    return res.json({ ok: true });
+  });
+}
+
 app.get("/meta/actions", (_req, res) => {
+  setMetadataCacheHeaders(res, 300);
   res.json({
     ...getActionMetadata(),
     levelProgression: {
@@ -397,6 +651,7 @@ app.get("/meta/actions", (_req, res) => {
 });
 
 app.get("/meta/public", (_req, res) => {
+  setMetadataCacheHeaders(res, 60);
   return res.json({
     apiBaseUrl: process.env.PUBLIC_API_BASE_URL || "",
     webBaseUrl: WEB_BASE_URL,
@@ -637,6 +892,34 @@ app.get("/players/:discordUserId", async (req, res) => {
     if (!player) return res.status(404).json({ error: "Player not found" });
 
     return res.json(toPublicPlayer(player));
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/players/:discordUserId/sync", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+
+    // Lightweight poll endpoint for web profile sync loop.
+    const player = await getPlayerSyncByDiscordId(db, discordUserId);
+    if (!player) return res.status(404).json({ error: "Player not found" });
+
+    const sinceParam = Number(req.query?.since || 0);
+    const since = Number.isFinite(sinceParam) ? sinceParam : 0;
+    const updatedAtMs = toTimestampMs(player.updatedAt);
+    if (since > 0 && updatedAtMs > 0 && since >= updatedAtMs) {
+      return res.status(204).end();
+    }
+
+    const payload = toSyncPlayer(player);
+    res.set("Cache-Control", "no-store");
+    return res.json(payload);
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -1303,13 +1586,47 @@ app.use((_req, res) => {
   return res.status(404).json({ error: "Not found" });
 });
 
+let server = null;
+
 initDatabase(db)
   .then(() => {
-    app.listen(PORT, HOST, () => {
+    server = app.listen(PORT, HOST, () => {
       console.log(`API running on http://${HOST}:${PORT}`);
       console.log(
         `Rate limits: ip=${RATE_LIMIT_MAX_REQUESTS_PER_IP}/${RATE_LIMIT_WINDOW_MS}ms, actions=${RATE_LIMIT_MAX_ACTIONS_PER_USER}/${RATE_LIMIT_WINDOW_MS}ms`
       );
+      if (httpMetrics && METRICS_LOG_INTERVAL_MS > 0) {
+        console.log(
+          `HTTP metrics enabled: sampleSize=${METRICS_SAMPLE_SIZE}, maxRoutes=${METRICS_MAX_ROUTES}, intervalMs=${METRICS_LOG_INTERVAL_MS}`
+        );
+        metricsLogTimer = setInterval(() => {
+          const snapshot = httpMetrics.snapshot({ limit: 6 });
+          if (snapshot.totalRequests <= 0) return;
+          const topRoutes = snapshot.routes
+            .map(
+              (route) =>
+                `${route.route} req=${route.requests} p50=${route.p50Ms}ms p95=${route.p95Ms}ms p99=${route.p99Ms}ms`
+            )
+            .join(" | ");
+          console.log(
+            `[HTTP_METRICS] total=${snapshot.totalRequests} routes=${snapshot.routeCount} ${topRoutes}`
+          );
+        }, METRICS_LOG_INTERVAL_MS);
+        if (typeof metricsLogTimer.unref === "function") {
+          metricsLogTimer.unref();
+        }
+      }
+    });
+
+    server.on("error", (err) => {
+      if (err && err.code === "EADDRINUSE") {
+        console.error(
+          `Startup failed: ${HOST}:${PORT} is already in use. Stop the existing process or change PORT in api/.env.`
+        );
+      } else {
+        console.error("Server listen failed:", err);
+      }
+      process.exit(1);
     });
   })
   .catch((err) => {
@@ -1319,6 +1636,13 @@ initDatabase(db)
 
 async function closeAndExit() {
   try {
+    if (metricsLogTimer) {
+      clearInterval(metricsLogTimer);
+      metricsLogTimer = null;
+    }
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
     await db.end();
   } finally {
     process.exit(0);
@@ -1329,7 +1653,9 @@ process.on("SIGINT", closeAndExit);
 process.on("SIGTERM", closeAndExit);
 process.on("uncaughtException", (err) => {
   console.error("Uncaught exception:", err);
+  process.exit(1);
 });
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled rejection:", reason);
+  process.exit(1);
 });

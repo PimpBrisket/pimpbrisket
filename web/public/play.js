@@ -260,7 +260,12 @@ let actionMeta = FALLBACK_META;
 let cooldownTimer = null;
 let profileSyncTimer = null;
 let currentProfile = null;
+let profileSyncInFlight = false;
+let loadProfileInFlight = null;
+let lastProfileUpdatedAtMs = 0;
 const appBasePath = window.location.pathname.replace(/\/(?:play(?:\.html)?|index\.html)?$/, "");
+const COOLDOWN_TICK_INTERVAL_MS = 1000;
+const PROFILE_SYNC_INTERVAL_MS = 15000;
 const digAnimationImageEl = document.getElementById("anim-dig-image");
 const DEV_OWNER_DISCORD_USER_ID = "931015893377482854";
 const GAMBLING_UNLOCK_LEVEL = 5;
@@ -335,6 +340,14 @@ function detectLocalTimezone() {
   } catch (_err) {
     return "";
   }
+}
+
+function getProfileUpdatedAtMs(profile) {
+  if (!profile) return 0;
+  const direct = Number(profile.updatedAtMs || 0);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const parsed = new Date(profile.updatedAt).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 async function fetchApi(path, options = {}) {
@@ -748,8 +761,7 @@ async function triggerDevAction(action, rewardLabel) {
   });
   applyPlayerSnapshot(payload.player);
   await playAnimation(action, payload.rewardBreakdown?.bonusLabel || "");
-  await loadDailySummary().catch(() => {});
-  await loadAchievements().catch(() => {});
+  await refreshSecondaryProgressData();
   renderChanceTable(selectedChanceAction);
   return payload;
 }
@@ -928,11 +940,13 @@ function readBetOrSetError() {
 function applyPlayerSnapshot(player) {
   if (!player) return;
   currentProfile = player;
+  lastProfileUpdatedAtMs = getProfileUpdatedAtMs(player);
   sessionWalletDelta = 0;
   setWallet(player.money);
   setLevelBar(player);
   setUserAvatar(player.discordAvatarUrl);
-  populateProfilePanel(player);
+  if (profilePanel && !profilePanel.hidden) populateProfilePanel(player);
+  if (trophyPanel && !trophyPanel.hidden) populateTrophyPanel(player);
   updateModeMenuAvailability();
   updateShowcaseButtonVisibility();
   if (currentMode === "gambling" && !isGamblingUnlocked()) {
@@ -943,6 +957,49 @@ function applyPlayerSnapshot(player) {
   if (inventoryPanel && !inventoryPanel.hidden) renderInventoryPanel();
   if (showcasePanel && !showcasePanel.hidden && !showcaseDraftDirty) renderShowcasePanel();
   if (shopPanel && !shopPanel.hidden) renderShopPanel();
+}
+
+function applyPlayerSyncSnapshot(syncPlayer) {
+  if (!syncPlayer) return;
+  const mergedProfile = {
+    ...(currentProfile || {}),
+    ...syncPlayer
+  };
+
+  currentProfile = mergedProfile;
+  lastProfileUpdatedAtMs = getProfileUpdatedAtMs(syncPlayer);
+  sessionWalletDelta = 0;
+  setWallet(mergedProfile.money);
+  setLevelBar(mergedProfile);
+  setUserAvatar(mergedProfile.discordAvatarUrl);
+
+  cooldownUntilByAction.dig = Number(mergedProfile.digCooldownUntil || 0);
+  cooldownUntilByAction.fish = Number(mergedProfile.fishCooldownUntil || 0);
+  cooldownUntilByAction.hunt = Number(mergedProfile.huntCooldownUntil || 0);
+  updateButtonsByCooldown();
+
+  updateModeMenuAvailability();
+  updateShowcaseButtonVisibility();
+  if (currentMode === "gambling" && !isGamblingUnlocked()) {
+    setMode("actions");
+  } else if (profilePanel && !profilePanel.hidden) {
+    populateProfilePanel(mergedProfile);
+  }
+  if (trophyPanel && !trophyPanel.hidden) populateTrophyPanel(mergedProfile);
+}
+
+function shouldRunFullProfileSync() {
+  if (showcasePanel && !showcasePanel.hidden && showcaseDraftDirty) return false;
+
+  // Full profile refresh is only needed while detail-heavy panels are visible.
+  return Boolean(
+    (profilePanel && !profilePanel.hidden) ||
+      (inventoryPanel && !inventoryPanel.hidden) ||
+      (showcasePanel && !showcasePanel.hidden) ||
+      (shopPanel && !shopPanel.hidden) ||
+      (upgradePanel && !upgradePanel.hidden) ||
+      (trophyPanel && !trophyPanel.hidden)
+  );
 }
 
 function formatResetCountdown(timestamp) {
@@ -1049,6 +1106,14 @@ async function loadAchievements() {
   renderAchievements(summary);
 }
 
+async function refreshSecondaryProgressData() {
+  const tasks = [];
+  if (dailyPanel && !dailyPanel.hidden) tasks.push(loadDailySummary());
+  if (achievementsPanel && !achievementsPanel.hidden) tasks.push(loadAchievements());
+  if (tasks.length === 0) return;
+  await Promise.all(tasks.map((task) => task.catch(() => {})));
+}
+
 function upgradeActionLabel(action) {
   return action.charAt(0).toUpperCase() + action.slice(1);
 }
@@ -1106,7 +1171,7 @@ function renderUpgrades(upgradeSummary) {
           applyPlayerSnapshot(payload.player);
           renderUpgrades(payload.upgrades);
           renderChanceTable(selectedChanceAction);
-          await loadAchievements().catch(() => {});
+          await refreshSecondaryProgressData();
           setStatus(`${upgradeActionLabel(action)} ${entry.label} upgraded.`, "tone-success");
         } catch (err) {
           setStatus(err.message || "Upgrade failed.", "tone-error");
@@ -1129,7 +1194,7 @@ function renderUpgrades(upgradeSummary) {
           applyPlayerSnapshot(payload.player);
           renderUpgrades(payload.upgrades);
           renderChanceTable(selectedChanceAction);
-          await loadAchievements().catch(() => {});
+          await refreshSecondaryProgressData();
           setStatus(
             `${upgradeActionLabel(action)} ${entry.label} bought ${payload.purchasedLevels || 0} levels.`,
             "tone-success"
@@ -1169,8 +1234,7 @@ async function settleGamblingRound(game, coinDelta, won) {
     body: JSON.stringify({ game, coinDelta, won })
   });
   applyPlayerSnapshot(payload.player);
-  await loadDailySummary().catch(() => {});
-  await loadAchievements().catch(() => {});
+  await refreshSecondaryProgressData();
   return payload;
 }
 
@@ -1377,20 +1441,26 @@ function updateButtonsByCooldown() {
 function startCooldownTicker() {
   if (cooldownTimer) clearInterval(cooldownTimer);
   cooldownTimer = setInterval(() => {
+    if (document.hidden) return;
     updateButtonsByCooldown();
-  }, 250);
+  }, COOLDOWN_TICK_INTERVAL_MS);
 }
 
 function startProfileSync() {
   if (profileSyncTimer) clearInterval(profileSyncTimer);
   profileSyncTimer = setInterval(async () => {
-    if (showcasePanel && !showcasePanel.hidden && showcaseDraftDirty) return;
+    if (document.hidden) return;
+    if (profileSyncInFlight) return;
     try {
-      await loadProfile();
+      if (shouldRunFullProfileSync()) {
+        await loadProfile();
+      } else {
+        await loadProfileSync();
+      }
     } catch (_err) {
       // Keep last-known values if polling fails.
     }
-  }, 3000);
+  }, PROFILE_SYNC_INTERVAL_MS);
 }
 
 function renderChanceRows(tbodyEl, rows, mapFn) {
@@ -1667,17 +1737,55 @@ function resolveUserId() {
 }
 
 async function loadProfile() {
-  const response = await fetch(`${apiBaseUrl}/players/${discordUserId}`);
-  const payload = await readJsonSafely(response);
-  if (!response.ok) throw new Error(getApiError(payload, "Could not load profile"));
+  if (!discordUserId) return null;
+  if (loadProfileInFlight) return loadProfileInFlight;
 
-  const profile = payload;
-  applyPlayerSnapshot(profile);
+  loadProfileInFlight = (async () => {
+    const response = await fetch(`${apiBaseUrl}/players/${discordUserId}`);
+    const payload = await readJsonSafely(response);
+    if (!response.ok) throw new Error(getApiError(payload, "Could not load profile"));
 
-  cooldownUntilByAction.dig = Number(profile.digCooldownUntil || 0);
-  cooldownUntilByAction.fish = Number(profile.fishCooldownUntil || 0);
-  cooldownUntilByAction.hunt = Number(profile.huntCooldownUntil || 0);
-  updateButtonsByCooldown();
+    const profile = payload;
+    applyPlayerSnapshot(profile);
+
+    cooldownUntilByAction.dig = Number(profile.digCooldownUntil || 0);
+    cooldownUntilByAction.fish = Number(profile.fishCooldownUntil || 0);
+    cooldownUntilByAction.hunt = Number(profile.huntCooldownUntil || 0);
+    updateButtonsByCooldown();
+    return profile;
+  })();
+
+  try {
+    return await loadProfileInFlight;
+  } finally {
+    loadProfileInFlight = null;
+  }
+}
+
+async function loadProfileSync() {
+  if (!discordUserId || profileSyncInFlight || loadProfileInFlight) return;
+  profileSyncInFlight = true;
+  try {
+    // Delta sync avoids pulling full inventory/achievement payload every interval.
+    const sinceSuffix =
+      lastProfileUpdatedAtMs > 0 ? `?since=${encodeURIComponent(lastProfileUpdatedAtMs)}` : "";
+    const response = await fetch(
+      `${apiBaseUrl}/players/${discordUserId}/sync${sinceSuffix}`
+    );
+    if (response.status === 204) return;
+    if (response.status === 404) {
+      await loadProfile();
+      return;
+    }
+
+    const payload = await readJsonSafely(response);
+    if (!response.ok) {
+      throw new Error(getApiError(payload, "Could not sync profile"));
+    }
+    applyPlayerSyncSnapshot(payload);
+  } finally {
+    profileSyncInFlight = false;
+  }
 }
 
 async function loadDevConfig() {
@@ -1827,8 +1935,7 @@ async function performAction(action) {
         "tone-success"
       );
     }
-    await loadDailySummary().catch(() => {});
-    await loadAchievements().catch(() => {});
+    await refreshSecondaryProgressData();
     updateButtonsByCooldown();
   } catch (err) {
     setStatus(err.message || "Could not reach API.", "tone-error");
@@ -2321,7 +2428,7 @@ function bindModeAndGambling() {
         });
         applyPlayerSnapshot(payload.player);
         await loadDailySummary();
-        await loadAchievements().catch(() => {});
+        await refreshSecondaryProgressData();
         setStatus(`Daily claimed: +$${formatCoins(payload.rewardCoins)}.`, "tone-success");
       } catch (err) {
         setStatus(err.message || "Daily claim failed.", "tone-error");
@@ -2338,7 +2445,7 @@ function bindModeAndGambling() {
         });
         applyPlayerSnapshot(payload.player);
         await loadDailySummary();
-        await loadAchievements().catch(() => {});
+        await refreshSecondaryProgressData();
         setStatus(
           `Daily challenge claimed: +$${formatCoins(payload.rewardCoins)}.`,
           "tone-success"
@@ -2713,6 +2820,13 @@ async function init() {
   bindActions();
   bindModeAndGambling();
   bindUserMenu();
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      updateButtonsByCooldown();
+      const refresh = shouldRunFullProfileSync() ? loadProfile() : loadProfileSync();
+      Promise.resolve(refresh).catch(() => {});
+    }
+  });
   updateModeMenuAvailability();
   setMode("actions");
   startCooldownTicker();
