@@ -35,6 +35,8 @@ const closeUpgradeButton = document.getElementById("close-upgrade-button");
 const upgradesListEl = document.getElementById("upgrades-list");
 const shopPanel = document.getElementById("shop-panel");
 const closeShopButton = document.getElementById("close-shop-button");
+const shopShowcaseCardEl = document.getElementById("shop-showcase-card");
+const shopEmptyMessageEl = document.getElementById("shop-empty-message");
 const shopStatusEl = document.getElementById("shop-status");
 const shopBuyShowcaseButton = document.getElementById("shop-buy-showcase-button");
 const showcasePanel = document.getElementById("showcase-panel");
@@ -503,6 +505,9 @@ function buildInventoryShowcaseMeta(item) {
 function renderInventoryPanel() {
   if (!inventoryListEl) return;
   const items = Array.isArray(currentProfile?.inventory?.items) ? currentProfile.inventory.items : [];
+  const showcasedKeys = new Set(
+    Array.isArray(currentProfile?.showcase?.showcasedItems) ? currentProfile.showcase.showcasedItems : []
+  );
   inventoryListEl.innerHTML = "";
   if (items.length === 0) {
     const empty = document.createElement("p");
@@ -540,6 +545,21 @@ function renderInventoryPanel() {
     sellAllButton.className = "close-profile";
     sellAllButton.type = "button";
     sellAllButton.textContent = "Sell All";
+    const ownedCount = Math.max(0, Math.floor(Number(item.count || 0)));
+    const isShowcased = showcasedKeys.has(item.key);
+    const sellableCount = isShowcased ? Math.max(0, ownedCount - 1) : ownedCount;
+    if (isShowcased) {
+      meta.textContent = `${meta.textContent} | Showcased items keep 1 locked`;
+      if (sellableCount > 0) {
+        sellAllButton.textContent = "Sell All (Keep 1)";
+      }
+    }
+    if (sellableCount <= 0) {
+      sellOneButton.disabled = true;
+      sellAllButton.disabled = true;
+      sellOneButton.textContent = "Locked";
+      sellAllButton.textContent = "Locked";
+    }
 
     sellOneButton.addEventListener("click", () => {
       sellInventoryItem(item.key, 1).catch((err) => {
@@ -567,6 +587,13 @@ function renderShopPanel() {
   const slots = Number(showcase.slots || 0);
   const maxSlots = Number(showcase.maxSlots || 0);
   const nextCost = Number(showcase.nextSlotCost || 0);
+  const isSoldOut = slots >= maxSlots && maxSlots > 0;
+  if (shopShowcaseCardEl) {
+    shopShowcaseCardEl.hidden = isSoldOut;
+  }
+  if (shopEmptyMessageEl) {
+    shopEmptyMessageEl.hidden = !isSoldOut;
+  }
 
   if (slots <= 0) {
     shopStatusEl.textContent = "Buy Showcase to unlock 1 showcase slot.";
@@ -575,8 +602,8 @@ function renderShopPanel() {
     return;
   }
   if (slots >= maxSlots) {
-    shopStatusEl.textContent = `Showcase maxed at ${maxSlots} slots.`;
-    shopBuyShowcaseButton.textContent = "Maxed";
+    shopStatusEl.textContent = "";
+    shopBuyShowcaseButton.textContent = "";
     shopBuyShowcaseButton.disabled = true;
     return;
   }
@@ -898,13 +925,15 @@ function applyPlayerSnapshot(player) {
   if (shopPanel && !shopPanel.hidden) renderShopPanel();
 }
 
-function formatResetTime(timestamp) {
-  const date = new Date(Number(timestamp || 0));
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short"
-  });
+function formatResetCountdown(timestamp) {
+  const targetMs = Number(timestamp || 0);
+  if (!Number.isFinite(targetMs) || targetMs <= 0) return "-";
+  const remainingMs = Math.max(0, targetMs - Date.now());
+  const totalSeconds = Math.floor(remainingMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${hours}h ${minutes}m ${seconds}s`;
 }
 
 async function loadDailySummary() {
@@ -924,7 +953,7 @@ async function loadDailySummary() {
   }
   if (dailyRewardDetailEl) {
     dailyRewardDetailEl.textContent =
-      `Streak: ${summary.daily.streak} | Next claim streak: ${summary.daily.nextStreak} | Boost: +${formatPercent(summary.daily.bonusPct)} | Resets: ${formatResetTime(summary.nextResetAt)}`;
+      `Streak: ${summary.daily.streak} | Next claim streak: ${summary.daily.nextStreak} | Boost: +${formatPercent(summary.daily.bonusPct)} | Resets in: ${formatResetCountdown(summary.nextResetAt)}`;
   }
   if (claimDailyButton) claimDailyButton.disabled = !summary.timezoneConfigured || !summary.daily.ready;
 
@@ -938,7 +967,7 @@ async function loadDailySummary() {
   }
   if (dailyChallengeDetailEl) {
     dailyChallengeDetailEl.textContent =
-      `Streak: ${summary.challenge.streak} | Next claim streak: ${summary.challenge.nextStreak} | Boost: +${formatPercent(summary.challenge.bonusPct)} | Resets: ${formatResetTime(summary.nextResetAt)}`;
+      `Streak: ${summary.challenge.streak} | Next claim streak: ${summary.challenge.nextStreak} | Boost: +${formatPercent(summary.challenge.bonusPct)} | Resets in: ${formatResetCountdown(summary.nextResetAt)}`;
   }
   if (claimDailyChallengeButton) {
     claimDailyChallengeButton.disabled = !summary.timezoneConfigured || !summary.challenge.ready;

@@ -1838,11 +1838,28 @@ async function sellInventoryItem(db, discordUserId, itemKey, quantity = null) {
       return { ok: false, error: "You do not have that item", player: playerBefore };
     }
 
+    const showcaseSlots = sanitizeShowcaseSlots(playerBefore.showcaseSlots);
+    const showcasedItemsBefore = sanitizeShowcasedItems(
+      playerBefore.showcasedItems || [],
+      showcaseSlots,
+      inventory
+    );
+    const reserveCount = showcasedItemsBefore.includes(itemKey) ? 1 : 0;
+    const maxSellable = Math.max(0, ownedCount - reserveCount);
+    if (maxSellable <= 0) {
+      await client.query("COMMIT");
+      return {
+        ok: false,
+        error: "This showcased item is locked. Keep at least 1 in inventory.",
+        player: playerBefore
+      };
+    }
+
     const requestedQty =
       quantity === null || quantity === undefined
-        ? ownedCount
+        ? maxSellable
         : Math.max(1, Math.floor(Number(quantity) || 1));
-    const sellQty = Math.max(1, Math.min(ownedCount, requestedQty));
+    const sellQty = Math.max(1, Math.min(maxSellable, requestedQty));
     const def = ITEM_DEFS[itemKey];
     const grossCoins = sellQty * Math.max(0, Math.floor(Number(def.sellCoins) || 0));
     const appliedCoins = isMoneyFrozen(playerBefore) ? 0 : grossCoins;
@@ -1851,7 +1868,6 @@ async function sellInventoryItem(db, discordUserId, itemKey, quantity = null) {
     if (remaining > 0) inventory[itemKey] = remaining;
     else delete inventory[itemKey];
 
-    const showcaseSlots = sanitizeShowcaseSlots(playerBefore.showcaseSlots);
     const showcasedItems = sanitizeShowcasedItems(
       playerBefore.showcasedItems || [],
       showcaseSlots,
