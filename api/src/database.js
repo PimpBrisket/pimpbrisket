@@ -429,14 +429,18 @@ function sanitizeShowcasedItems(input, slots, inventory) {
   if (!Array.isArray(input) || slots <= 0) return [];
   const next = [];
   const available = new Set(Object.keys(ITEM_DEFS));
+  const usedByKey = {};
   for (const rawKey of input) {
     if (next.length >= slots) break;
     if (typeof rawKey !== "string") continue;
     const key = rawKey.trim();
     if (!available.has(key)) continue;
-    if (next.includes(key)) continue;
-    if (Math.max(0, Math.floor(Number(inventory[key]) || 0)) <= 0) continue;
+    const ownedCount = Math.max(0, Math.floor(Number(inventory[key]) || 0));
+    if (ownedCount <= 0) continue;
+    const currentlyUsed = Math.max(0, Math.floor(Number(usedByKey[key]) || 0));
+    if (currentlyUsed >= ownedCount) continue;
     next.push(key);
+    usedByKey[key] = currentlyUsed + 1;
   }
   return next;
 }
@@ -1893,13 +1897,13 @@ async function sellInventoryItem(db, discordUserId, itemKey, quantity = null) {
       showcaseSlots,
       inventory
     );
-    const reserveCount = showcasedItemsBefore.includes(itemKey) ? 1 : 0;
+    const reserveCount = showcasedItemsBefore.filter((key) => key === itemKey).length;
     const maxSellable = Math.max(0, ownedCount - reserveCount);
     if (maxSellable <= 0) {
       await client.query("COMMIT");
       return {
         ok: false,
-        error: "This showcased item is locked. Keep at least 1 in inventory.",
+        error: `This showcased item is locked. Keep at least ${reserveCount} in inventory.`,
         player: playerBefore
       };
     }
