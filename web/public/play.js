@@ -87,6 +87,7 @@ const profileEarnedEl = document.getElementById("profile-earned");
 const profileTrophiesEl = document.getElementById("profile-trophies");
 const profileJoinedEl = document.getElementById("profile-joined");
 const profileShowcaseSummaryEl = document.getElementById("profile-showcase-summary");
+const profileShowcaseItemsEl = document.getElementById("profile-showcase-items");
 const trophyDigImageEl = document.getElementById("trophy-dig-image");
 const trophyFishImageEl = document.getElementById("trophy-fish-image");
 const trophyHuntImageEl = document.getElementById("trophy-hunt-image");
@@ -492,6 +493,12 @@ function formatShowcaseEffectText(item) {
   return bits.join(" | ") || "No showcase effect";
 }
 
+function buildInventoryShowcaseMeta(item) {
+  const effectText = formatShowcaseEffectText(item);
+  if (effectText === "No showcase effect") return effectText;
+  return `Showcase effect (only when showcased): ${effectText}`;
+}
+
 function renderInventoryPanel() {
   if (!inventoryListEl) return;
   const items = Array.isArray(currentProfile?.inventory?.items) ? currentProfile.inventory.items : [];
@@ -518,7 +525,7 @@ function renderInventoryPanel() {
     name.textContent = `${item.name} x${formatCoins(item.count)}`;
     const meta = document.createElement("p");
     meta.className = "meta";
-    meta.textContent = `Sell: $${formatCoins(item.sellCoins)} each | ${formatShowcaseEffectText(item)}`;
+    meta.textContent = `Sell: $${formatCoins(item.sellCoins)} each | ${buildInventoryShowcaseMeta(item)}`;
     textWrap.appendChild(name);
     textWrap.appendChild(meta);
 
@@ -1191,6 +1198,56 @@ function buildProfileShowcaseSummary(profile) {
   return `Slots ${slots}/${maxSlots} | ${shownNames.join(", ")}`;
 }
 
+function renderProfileShowcaseItems(profile) {
+  if (!profileShowcaseItemsEl) return;
+  const items = Array.isArray(profile?.inventory?.items) ? profile.inventory.items : [];
+  const showcased = Array.isArray(profile?.showcase?.showcasedItems)
+    ? profile.showcase.showcasedItems
+    : [];
+  const showcasedSet = new Set(showcased);
+  const showcaseable = items.filter((item) => item?.showcase && Number(item.count || 0) > 0);
+
+  profileShowcaseItemsEl.innerHTML = "";
+  if (showcaseable.length <= 0) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "No showcaseable inventory items yet.";
+    profileShowcaseItemsEl.appendChild(empty);
+    return;
+  }
+
+  showcaseable.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "profile-showcase-item";
+    if (showcasedSet.has(item.key)) {
+      row.classList.add("is-active");
+    }
+
+    const image = document.createElement("img");
+    image.src = resolveAssetUrl(item.image || "/assets/null_trophy.png");
+    image.alt = item.name || "Showcase item";
+
+    const text = document.createElement("div");
+    const name = document.createElement("p");
+    name.className = "name";
+    name.textContent = `${item.name} x${formatCoins(item.count)}`;
+    const meta = document.createElement("p");
+    meta.className = "meta";
+    meta.textContent = buildInventoryShowcaseMeta(item);
+    text.appendChild(name);
+    text.appendChild(meta);
+
+    const state = document.createElement("span");
+    state.className = "state";
+    state.textContent = showcasedSet.has(item.key) ? "Showcased" : "Available";
+
+    row.appendChild(image);
+    row.appendChild(text);
+    row.appendChild(state);
+    profileShowcaseItemsEl.appendChild(row);
+  });
+}
+
 function populateProfilePanel(profile) {
   if (!profile) return;
   if (
@@ -1224,6 +1281,7 @@ function populateProfilePanel(profile) {
   if (profileShowcaseSummaryEl) {
     profileShowcaseSummaryEl.textContent = buildProfileShowcaseSummary(profile);
   }
+  renderProfileShowcaseItems(profile);
   populateTrophyPanel(profile);
 }
 
