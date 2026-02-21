@@ -138,7 +138,7 @@ const FALLBACK_META = {
         { chancePct: 2, coins: 20, label: "Da Bone" },
         {
           chancePct: 1,
-          coins: 0,
+          coins: 45,
           label: "Collectors Greed",
           itemKey: "dig_trophy",
           itemImage: "/assets/dig-trophy.png"
@@ -160,7 +160,7 @@ const FALLBACK_META = {
         { chancePct: 3, coins: 24, label: "Ancient Chest Key" },
         {
           chancePct: 1,
-          coins: 0,
+          coins: 45,
           label: "Midnight Ocean",
           itemKey: "fish_trophy",
           itemImage: "/assets/fish-trophy.png"
@@ -182,7 +182,7 @@ const FALLBACK_META = {
         { chancePct: 3, coins: 30, label: "Rare Antler Set" },
         {
           chancePct: 1,
-          coins: 0,
+          coins: 45,
           label: "Many Heads",
           itemKey: "hunt_trophy",
           itemImage: "/assets/hunt-trophy.png"
@@ -201,6 +201,7 @@ let currentProfile = null;
 const appBasePath = window.location.pathname.replace(/\/(?:play(?:\.html)?|index\.html)?$/, "");
 const digAnimationImageEl = document.getElementById("anim-dig-image");
 const DEV_OWNER_DISCORD_USER_ID = "931015893377482854";
+const GAMBLING_UNLOCK_LEVEL = 5;
 let isDevOwner = false;
 let isDevModeActive = false;
 let selectedChanceAction = "dig";
@@ -277,6 +278,94 @@ async function fetchApi(path, options = {}) {
     throw new Error(getApiError(payload, "Request failed"));
   }
   return payload;
+}
+
+function isGamblingUnlocked() {
+  return Number(currentProfile?.level || 1) >= GAMBLING_UNLOCK_LEVEL;
+}
+
+function updateModeMenuAvailability() {
+  if (!modeGamblingButton) return;
+  const unlocked = isGamblingUnlocked();
+  modeGamblingButton.disabled = !unlocked;
+  modeGamblingButton.textContent = unlocked
+    ? "Gambling"
+    : `Gambling (Unlocks LVL ${GAMBLING_UNLOCK_LEVEL})`;
+}
+
+function cloneActionConfig(config) {
+  return {
+    ...config,
+    payoutTiers: Array.isArray(config?.payoutTiers)
+      ? config.payoutTiers.map((tier) => ({ ...tier }))
+      : [],
+    bonusTiers: Array.isArray(config?.bonusTiers)
+      ? config.bonusTiers.map((tier) => ({ ...tier }))
+      : []
+  };
+}
+
+function applyDropBoostToDisplayBonusTiers(bonusTiers, dropReductionFactor) {
+  if (!Array.isArray(bonusTiers) || bonusTiers.length === 0) return [];
+  const noDropIndex = bonusTiers.findIndex((tier) => tier.coins === 0 && !tier.itemKey);
+  if (noDropIndex < 0 || dropReductionFactor <= 0) return bonusTiers;
+
+  const weighted = bonusTiers.map((tier, index) => {
+    const baseChance = Math.max(0, Number(tier.chancePct) || 0);
+    if (index === noDropIndex) {
+      return { ...tier, chancePct: baseChance * (1 - dropReductionFactor) };
+    }
+    return { ...tier, chancePct: baseChance };
+  });
+
+  const total = weighted.reduce((sum, tier) => sum + tier.chancePct, 0);
+  if (total <= 0) return bonusTiers;
+  return weighted.map((tier) => ({
+    ...tier,
+    chancePct: (tier.chancePct / total) * 100
+  }));
+}
+
+function getDisplayActionConfig(action) {
+  const base = actionMeta?.actions?.[action];
+  if (!base) return null;
+  const config = cloneActionConfig(base);
+  const effects = currentProfile?.upgrades?.[action]?.effects || {
+    cashMultiplier: 1,
+    xpMultiplier: 1,
+    dropReductionFactor: 0
+  };
+
+  config.xpMin = Math.max(1, Math.round((Number(config.xpMin) || 0) * effects.xpMultiplier));
+  config.xpMax = Math.max(
+    config.xpMin,
+    Math.round((Number(config.xpMax) || config.xpMin) * effects.xpMultiplier)
+  );
+
+  config.payoutTiers = config.payoutTiers.map((tier) => ({
+    ...tier,
+    min: Math.max(0, Math.round((Number(tier.min) || 0) * effects.cashMultiplier)),
+    max: Math.max(
+      Math.round((Number(tier.min) || 0) * effects.cashMultiplier),
+      Math.round((Number(tier.max) || 0) * effects.cashMultiplier)
+    )
+  }));
+
+  config.bonusTiers = config.bonusTiers.map((tier) => ({
+    ...tier,
+    coins: Math.max(0, Math.round((Number(tier.coins) || 0) * effects.cashMultiplier))
+  }));
+  config.bonusTiers = applyDropBoostToDisplayBonusTiers(
+    config.bonusTiers,
+    Number(effects.dropReductionFactor || 0)
+  );
+  return config;
+}
+
+function formatChancePct(value) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return "0";
+  return numeric.toFixed(2).replace(/\.?0+$/, "");
 }
 
 function getEffectiveRiskForGame() {
@@ -440,6 +529,12 @@ function applyPlayerSnapshot(player) {
   setLevelBar(player);
   setUserAvatar(player.discordAvatarUrl);
   populateProfilePanel(player);
+  updateModeMenuAvailability();
+  if (currentMode === "gambling" && !isGamblingUnlocked()) {
+    setMode("actions");
+  } else {
+    renderChanceTable(selectedChanceAction);
+  }
 }
 
 function formatResetTime(timestamp) {
@@ -526,7 +621,11 @@ function renderAchievements(achievementSummary) {
 
     const meta = document.createElement("p");
     meta.className = "meta";
-    meta.textContent = `Progress: ${formatCoins(chain.progress)} | Stage: ${chain.currentStage}/${chain.totalStages} | Claimed: ${chain.claimedStages}/${chain.totalStages}`;
+    const maxTarget = Array.isArray(chain.thresholds) && chain.thresholds.length > 0
+      ? chain.thresholds[chain.thresholds.length - 1]
+      : chain.progress;
+    const target = chain.nextTarget || maxTarget;
+    meta.textContent = `Progress: ${formatCoins(chain.progress)}/${formatCoins(target)} | Stage: ${chain.currentStage}/${chain.totalStages} | Claimed: ${chain.claimedStages}/${chain.totalStages}`;
 
     row.appendChild(top);
     row.appendChild(meta);
@@ -565,31 +664,80 @@ function renderUpgrades(upgradeSummary) {
       row.className = "upgrade-row";
       const meta = document.createElement("div");
       meta.className = "meta";
-      const level = upgradeSummary?.[action]?.[entry.key]?.level || 0;
-      const cost = upgradeSummary?.[action]?.[entry.key]?.nextCost || 0;
+      const details = upgradeSummary?.[action]?.[entry.key] || {};
+      const level = Number(details.level || 0);
+      const atMax = details.atMax === true;
+      const cost = Number(details.nextCost || 0);
       meta.textContent = `${entry.label} | Lvl ${level} | ${entry.effect}`;
-      const button = document.createElement("button");
-      button.className = "close-profile";
-      button.type = "button";
-      button.textContent = `Buy $${formatCoins(cost)}`;
-      button.addEventListener("click", async () => {
+
+      const actionsWrap = document.createElement("div");
+      actionsWrap.className = "upgrade-actions";
+
+      const buyButton = document.createElement("button");
+      buyButton.className = "close-profile";
+      buyButton.type = "button";
+      buyButton.textContent = atMax ? "MAX" : `Buy $${formatCoins(cost)}`;
+      buyButton.disabled = atMax;
+
+      const maxButton = document.createElement("button");
+      maxButton.className = "close-profile";
+      maxButton.type = "button";
+      maxButton.textContent = "Max";
+      maxButton.disabled = atMax;
+
+      buyButton.addEventListener("click", async () => {
         try {
-          button.disabled = true;
+          buyButton.disabled = true;
+          maxButton.disabled = true;
           const payload = await fetchApi(
             `/players/${discordUserId}/upgrades/${action}/${entry.key}`,
             { method: "POST", headers: { "Content-Type": "application/json" } }
           );
           applyPlayerSnapshot(payload.player);
           renderUpgrades(payload.upgrades);
+          renderChanceTable(selectedChanceAction);
+          await loadAchievements().catch(() => {});
           setStatus(`${upgradeActionLabel(action)} ${entry.label} upgraded.`, "tone-success");
         } catch (err) {
           setStatus(err.message || "Upgrade failed.", "tone-error");
         } finally {
-          button.disabled = false;
+          if (!atMax) {
+            buyButton.disabled = false;
+            maxButton.disabled = false;
+          }
         }
       });
+
+      maxButton.addEventListener("click", async () => {
+        try {
+          buyButton.disabled = true;
+          maxButton.disabled = true;
+          const payload = await fetchApi(
+            `/players/${discordUserId}/upgrades/${action}/${entry.key}/max`,
+            { method: "POST", headers: { "Content-Type": "application/json" } }
+          );
+          applyPlayerSnapshot(payload.player);
+          renderUpgrades(payload.upgrades);
+          renderChanceTable(selectedChanceAction);
+          await loadAchievements().catch(() => {});
+          setStatus(
+            `${upgradeActionLabel(action)} ${entry.label} bought ${payload.purchasedLevels || 0} levels.`,
+            "tone-success"
+          );
+        } catch (err) {
+          setStatus(err.message || "Max upgrade failed.", "tone-error");
+        } finally {
+          if (!atMax) {
+            buyButton.disabled = false;
+            maxButton.disabled = false;
+          }
+        }
+      });
+
       row.appendChild(meta);
-      row.appendChild(button);
+      actionsWrap.appendChild(buyButton);
+      actionsWrap.appendChild(maxButton);
+      row.appendChild(actionsWrap);
       card.appendChild(row);
     });
 
@@ -600,6 +748,7 @@ function renderUpgrades(upgradeSummary) {
 async function loadUpgrades() {
   if (!discordUserId) return;
   const payload = await fetchApi(`/players/${discordUserId}/upgrades`);
+  if (payload.player) applyPlayerSnapshot(payload.player);
   renderUpgrades(payload.upgrades);
 }
 
@@ -941,22 +1090,27 @@ function renderChanceTable(action) {
     return;
   }
 
-  chanceTitleEl.textContent = `${formatActionLabel(action)} Chances`;
-  chanceXpEl.textContent = `XP: ${config.xpMin}-${config.xpMax}`;
-
   if (isDevOwner && isDevModeActive) {
+    chanceTitleEl.textContent = `${formatActionLabel(action)} Chances`;
+    chanceXpEl.textContent = `XP: ${config.xpMin}-${config.xpMax}`;
     renderDevEditableChanceTable(action);
     return;
   }
 
-  renderChanceRows(chanceWinningsEl, config.payoutTiers, (tier) => ({
+  const displayConfig = getDisplayActionConfig(action);
+  if (!displayConfig) return;
+
+  chanceTitleEl.textContent = `${formatActionLabel(action)} Chances`;
+  chanceXpEl.textContent = `XP: ${displayConfig.xpMin}-${displayConfig.xpMax}`;
+
+  renderChanceRows(chanceWinningsEl, displayConfig.payoutTiers, (tier) => ({
     left: `$${tier.min} - $${tier.max}`,
-    right: `${tier.chancePct}%`
+    right: `${formatChancePct(tier.chancePct)}%`
   }));
 
-  renderChanceRows(chanceBonusEl, config.bonusTiers, (tier) => ({
+  renderChanceRows(chanceBonusEl, displayConfig.bonusTiers, (tier) => ({
     left: tier.coins > 0 ? `${tier.label} (+$${tier.coins})` : tier.label,
-    right: `${tier.chancePct}%`
+    right: `${formatChancePct(tier.chancePct)}%`
   }));
 }
 
@@ -1217,14 +1371,19 @@ function updateChancePanelForMode() {
   if (chanceBonusTableEl) chanceBonusTableEl.hidden = !showActionChances;
   if (chanceTitleEl) chanceTitleEl.textContent = showActionChances ? `${formatActionLabel(selectedChanceAction)} Chances` : "Gambling";
   if (chanceXpEl) {
+    const displayConfig = getDisplayActionConfig(selectedChanceAction);
     chanceXpEl.textContent = showActionChances
-      ? `XP: ${actionMeta.actions[selectedChanceAction]?.xpMin || 0}-${actionMeta.actions[selectedChanceAction]?.xpMax || 0}`
+      ? `XP: ${displayConfig?.xpMin || 0}-${displayConfig?.xpMax || 0}`
       : "Use the selector below to switch sections.";
   }
 }
 
 function setMode(mode) {
-  currentMode = mode === "gambling" ? "gambling" : "actions";
+  const wantsGambling = mode === "gambling";
+  if (wantsGambling && !isGamblingUnlocked()) {
+    setStatus(`Gambling unlocks at level ${GAMBLING_UNLOCK_LEVEL}.`, "tone-error");
+  }
+  currentMode = wantsGambling && isGamblingUnlocked() ? "gambling" : "actions";
   const inGambling = currentMode === "gambling";
   if (mainTitleEl) mainTitleEl.textContent = inGambling ? "Gambling Hall" : "Action Center";
   setNodeVisible(openUpgradeButton, !inGambling, "block");
@@ -1246,6 +1405,10 @@ function setMode(mode) {
 }
 
 function setActiveGambleGame(game) {
+  if (!isGamblingUnlocked()) {
+    setStatus(`Gambling unlocks at level ${GAMBLING_UNLOCK_LEVEL}.`, "tone-error");
+    return;
+  }
   selectedGambleGame = game;
   hideAllGambleControls();
   resetBlackjackState();
@@ -1543,7 +1706,9 @@ function bindModeAndGambling() {
   if (modeGamblingButton) {
     modeGamblingButton.addEventListener("click", () => {
       setMode("gambling");
-      setStatus("Gambling section selected.");
+      if (currentMode === "gambling") {
+        setStatus("Gambling section selected.");
+      }
     });
   }
 
@@ -1863,6 +2028,7 @@ async function init() {
   bindActions();
   bindModeAndGambling();
   bindUserMenu();
+  updateModeMenuAvailability();
   setMode("actions");
   startCooldownTicker();
   startProfileSync();
