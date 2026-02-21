@@ -228,7 +228,11 @@
             <p id="shop-status" class="v">Loading...</p>
             <button id="shop-buy-showcase-button" class="close-profile" type="button">Buy</button>
           </article>
-          <p id="shop-empty-message" class="muted" hidden>Shop sold out.</p>
+          <article id="shop-empty-card" class="profile-card" hidden>
+            <p class="k">Showcase Upgrade</p>
+            <p id="shop-empty-message" class="v">Sold Out</p>
+            <p class="muted">You have purchased all available showcase slots.</p>
+          </article>
         </section>
 
         <section id="showcase-panel" class="panel profile-panel" hidden>
@@ -260,7 +264,9 @@
               <div class="dev-row">
                 <input id="dev-money-input" type="number" min="0" step="1" value="0" />
                 <button id="dev-set-money-button" class="close-profile" type="button">Set Money</button>
-                <button id="dev-reset-money-button" class="close-profile" type="button">Reset $0</button>
+                <button id="dev-reset-progress-button" class="close-profile" type="button">
+                  Reset Progress
+                </button>
                 <label class="dev-toggle">
                   <input id="dev-freeze-money-toggle" type="checkbox" />
                   Freeze Money
@@ -404,6 +410,9 @@
                 <button id="coinflip-heads-button" class="close-profile" type="button">Call Heads</button>
                 <button id="coinflip-tails-button" class="close-profile" type="button">Call Tails</button>
               </div>
+              <div id="coinflip-anim" class="coinflip-anim" hidden>
+                <span id="coinflip-coin" class="coinflip-coin" aria-hidden="true"></span>
+              </div>
 
               <div id="blackjack-controls" class="game-controls" hidden>
                 <button id="blackjack-deal-button" class="close-profile" type="button">Deal</button>
@@ -470,6 +479,6 @@
         </section>
       </section>
     </main>
-    <script src="./play.js?v=19"></script>
+    <script src="./play.js?v=21"></script>
   </body>
 </html>

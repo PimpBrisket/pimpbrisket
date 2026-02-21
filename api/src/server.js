@@ -15,6 +15,7 @@ const {
   getPlayerDevConfig,
   setPlayerDevConfig,
   resetPlayerDevConfig,
+  resetPlayerProgress,
   setDevFreezeMoney,
   setPlayerLevel,
   lockActionCooldown,
@@ -636,6 +637,24 @@ app.get("/players/:discordUserId", async (req, res) => {
     if (!player) return res.status(404).json({ error: "Player not found" });
 
     return res.json(toPublicPlayer(player));
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/dev/:discordUserId/progress-reset", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+    if (!isDevOwnerId(discordUserId)) {
+      return res.status(403).json({ error: "Dev mode is not available for this user" });
+    }
+    const player = await resetPlayerProgress(db, discordUserId);
+    return res.json({ ok: true, player: toPublicPlayer(player) });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

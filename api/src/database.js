@@ -14,63 +14,63 @@ const ITEM_DEFS = {
     key: "gold_coin",
     name: "Gold Coin",
     image: "/assets/Gold%20coin.png",
-    sellCoins: 15,
+    sellCoins: 20,
     showcase: { action: "dig", cashPct: 5, xpPct: 0 }
   },
   da_bone: {
     key: "da_bone",
     name: "Da Bone",
     image: "/assets/Da%20bone.png",
-    sellCoins: 35,
+    sellCoins: 75,
     showcase: { action: "dig", cashPct: 0, xpPct: 5 }
   },
   collectors_greed: {
     key: "collectors_greed",
     name: "Collector's Greed",
     image: "/assets/dig-trophy.png",
-    sellCoins: 150,
+    sellCoins: 350,
     showcase: { action: "dig", cashPct: 10, xpPct: 10 }
   },
   treasure_scale: {
     key: "treasure_scale",
     name: "Treasure Scale",
     image: "/assets/null_trophy.png",
-    sellCoins: 15,
+    sellCoins: 20,
     showcase: { action: "fish", cashPct: 0, xpPct: 5 }
   },
   ancient_chest_key: {
     key: "ancient_chest_key",
     name: "Ancient Chest Key",
     image: "/assets/null_trophy.png",
-    sellCoins: 35,
+    sellCoins: 75,
     showcase: { action: "fish", cashPct: 5, xpPct: 0 }
   },
   midnight_ocean: {
     key: "midnight_ocean",
     name: "Midnight Ocean",
     image: "/assets/fish-trophy.png",
-    sellCoins: 150,
+    sellCoins: 350,
     showcase: { action: "fish", cashPct: 10, xpPct: 10 }
   },
   pelt_bonus: {
     key: "pelt_bonus",
     name: "Pelt Bonus",
     image: "/assets/null_trophy.png",
-    sellCoins: 15,
+    sellCoins: 20,
     showcase: { action: "hunt", cashPct: 5, xpPct: 0 }
   },
   rare_antler_set: {
     key: "rare_antler_set",
     name: "Rare Antler Set",
     image: "/assets/null_trophy.png",
-    sellCoins: 35,
+    sellCoins: 75,
     showcase: { action: "hunt", cashPct: 0, xpPct: 5 }
   },
   many_heads: {
     key: "many_heads",
     name: "Many Heads",
     image: "/assets/hunt-trophy.png",
-    sellCoins: 150,
+    sellCoins: 350,
     showcase: { action: "hunt", cashPct: 10, xpPct: 10 }
   }
 };
@@ -181,18 +181,18 @@ const ACTIONS = {
   dig: {
     cooldownColumn: "digCooldownUntil",
     xpMin: 12,
-    xpMax: 20,
+    xpMax: 19,
     payoutTiers: [
-      { chancePct: 45, min: 6, max: 12, label: "Small Pouch" },
+      { chancePct: 45, min: 7, max: 12, label: "Small Pouch" },
       { chancePct: 32, min: 13, max: 20, label: "Good Find" },
-      { chancePct: 18, min: 21, max: 34, label: "Lucky Find" },
-      { chancePct: 5, min: 35, max: 52, label: "Jackpot Vein" }
+      { chancePct: 18, min: 21, max: 32, label: "Lucky Find" },
+      { chancePct: 5, min: 33, max: 50, label: "Jackpot Vein" }
     ],
     bonusTiers: [
       { chancePct: 87, coins: 0, label: "No extra drop" },
       {
         chancePct: 11,
-        coins: 15,
+        coins: 10,
         label: "Gold Coin",
         itemKey: "gold_coin",
         itemImage: "/assets/Gold%20coin.png"
@@ -206,7 +206,7 @@ const ACTIONS = {
       },
       {
         chancePct: 1,
-        coins: 75,
+        coins: 120,
         label: "Collectors Greed",
         itemKey: "collectors_greed",
         itemImage: "/assets/dig-trophy.png"
@@ -215,19 +215,19 @@ const ACTIONS = {
   },
   fish: {
     cooldownColumn: "fishCooldownUntil",
-    xpMin: 14,
-    xpMax: 22,
+    xpMin: 13,
+    xpMax: 21,
     payoutTiers: [
-      { chancePct: 42, min: 8, max: 14, label: "Common Catch" },
-      { chancePct: 34, min: 15, max: 24, label: "Fresh Catch" },
-      { chancePct: 19, min: 25, max: 38, label: "Big Catch" },
-      { chancePct: 5, min: 39, max: 58, label: "Legend Catch" }
+      { chancePct: 45, min: 7, max: 12, label: "Common Catch" },
+      { chancePct: 32, min: 13, max: 20, label: "Fresh Catch" },
+      { chancePct: 18, min: 21, max: 32, label: "Big Catch" },
+      { chancePct: 5, min: 33, max: 50, label: "Legend Catch" }
     ],
     bonusTiers: [
       { chancePct: 87, coins: 0, label: "No extra drop" },
       {
         chancePct: 11,
-        coins: 15,
+        coins: 10,
         label: "Treasure Scale",
         itemKey: "treasure_scale",
         itemImage: "/assets/null_trophy.png"
@@ -241,7 +241,7 @@ const ACTIONS = {
       },
       {
         chancePct: 1,
-        coins: 75,
+        coins: 120,
         label: "Midnight Ocean",
         itemKey: "midnight_ocean",
         itemImage: "/assets/fish-trophy.png"
@@ -250,19 +250,19 @@ const ACTIONS = {
   },
   hunt: {
     cooldownColumn: "huntCooldownUntil",
-    xpMin: 16,
-    xpMax: 25,
+    xpMin: 14,
+    xpMax: 23,
     payoutTiers: [
-      { chancePct: 40, min: 10, max: 18, label: "Small Trophy" },
-      { chancePct: 35, min: 19, max: 30, label: "Strong Trophy" },
-      { chancePct: 20, min: 31, max: 46, label: "Prime Trophy" },
-      { chancePct: 5, min: 47, max: 68, label: "Elite Trophy" }
+      { chancePct: 45, min: 7, max: 12, label: "Small Trophy" },
+      { chancePct: 32, min: 13, max: 20, label: "Strong Trophy" },
+      { chancePct: 18, min: 21, max: 32, label: "Prime Trophy" },
+      { chancePct: 5, min: 33, max: 50, label: "Elite Trophy" }
     ],
     bonusTiers: [
       { chancePct: 87, coins: 0, label: "No extra drop" },
       {
         chancePct: 11,
-        coins: 15,
+        coins: 10,
         label: "Pelt Bonus",
         itemKey: "pelt_bonus",
         itemImage: "/assets/null_trophy.png"
@@ -276,7 +276,7 @@ const ACTIONS = {
       },
       {
         chancePct: 1,
-        coins: 75,
+        coins: 120,
         label: "Many Heads",
         itemKey: "many_heads",
         itemImage: "/assets/hunt-trophy.png"
@@ -518,7 +518,7 @@ function xpRequiredForLevel(level) {
 }
 
 function levelRewardCoins(level) {
-  return 40 + level * 14;
+  return 30 + level * 10;
 }
 
 function createDatabase(connectionString) {
@@ -825,6 +825,55 @@ async function setPlayerLevel(db, discordUserId, level) {
   return getPlayerByDiscordId(db, discordUserId);
 }
 
+async function resetPlayerProgress(db, discordUserId) {
+  await db.query(
+    `INSERT INTO players ("discordUserId", money, upgrades, "achievementState")
+     VALUES ($1, 0, $2::jsonb, $3::jsonb)
+     ON CONFLICT ("discordUserId") DO NOTHING`,
+    [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
+  );
+
+  await db.query(
+    `UPDATE players
+     SET money = 0,
+         "digCooldownUntil" = 0,
+         "fishCooldownUntil" = 0,
+         "huntCooldownUntil" = 0,
+         xp = 0,
+         "totalXpEarned" = 0,
+         level = 1,
+         "totalCommandsUsed" = 0,
+         "totalMoneyEarned" = 0,
+         "digTrophyCount" = 0,
+         "fishTrophyCount" = 0,
+         "huntTrophyCount" = 0,
+         timezone = NULL,
+         "dailyClaimDay" = NULL,
+         "dailyStreak" = 0,
+         "dailyTaskDay" = NULL,
+         "dailyTaskInteractions" = 0,
+         "dailyTaskClaimDay" = NULL,
+         "dailyTaskStreak" = 0,
+         "totalBonusRewards" = 0,
+         "totalGamblingWins" = 0,
+         "totalGamblingPlays" = 0,
+         "totalDigUpgradesPurchased" = 0,
+         "totalFishUpgradesPurchased" = 0,
+         "totalHuntUpgradesPurchased" = 0,
+         inventory = '{}'::jsonb,
+         "showcaseSlots" = 0,
+         "showcasedItems" = '[]'::jsonb,
+         "achievementState" = '{}'::jsonb,
+         upgrades = $1::jsonb,
+         "devConfig" = NULL,
+         "updatedAt" = NOW()
+     WHERE "discordUserId" = $2`,
+    [JSON.stringify(DEFAULT_UPGRADES), discordUserId]
+  );
+
+  return getPlayerByDiscordId(db, discordUserId);
+}
+
 function getActionConfig(action) {
   return ACTIONS[action] || null;
 }
@@ -872,14 +921,14 @@ function getUpgradeCost(action, upgradeKey, currentLevel) {
   if (level >= MAX_UPGRADE_LEVEL) return 0;
   const MAX_INT32 = 2147483647;
   const baseByKey = {
-    cash: 220,
-    xp: 260,
-    drop: 3200
+    cash: 130,
+    xp: 140,
+    drop: 1100
   };
   const growthByKey = {
-    cash: 1.33,
-    xp: 1.38,
-    drop: 1.72
+    cash: 1.26,
+    xp: 1.28,
+    drop: 1.42
   };
   const base = baseByKey[upgradeKey] || 500;
   const growth = growthByKey[upgradeKey] || 1.4;
@@ -892,9 +941,9 @@ function getUpgradeCost(action, upgradeKey, currentLevel) {
 function getUpgradeEffects(upgrades, action) {
   const actionUpgrades = sanitizeUpgrades(upgrades)[action] || DEFAULT_UPGRADES[action];
   return {
-    cashMultiplier: 1 + actionUpgrades.cash * 0.05,
-    xpMultiplier: 1 + actionUpgrades.xp * 0.05,
-    dropReductionFactor: Math.min(0.5, actionUpgrades.drop * 0.015)
+    cashMultiplier: 1 + actionUpgrades.cash * 0.025,
+    xpMultiplier: 1 + actionUpgrades.xp * 0.025,
+    dropReductionFactor: Math.min(0.35, actionUpgrades.drop * 0.008)
   };
 }
 
@@ -2044,6 +2093,7 @@ module.exports = {
   getPlayerDevConfig,
   setPlayerDevConfig,
   resetPlayerDevConfig,
+  resetPlayerProgress,
   setDevFreezeMoney,
   setPlayerLevel,
   lockActionCooldown,
