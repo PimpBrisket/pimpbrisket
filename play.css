@@ -485,6 +485,10 @@ body.profile-focus #profile-panel {
   font-weight: 700;
 }
 
+#shop-status {
+  text-align: center;
+}
+
 .profile-showcase-items {
   margin-top: 10px;
   display: grid;
@@ -885,6 +889,43 @@ body.profile-focus #profile-panel {
   gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 10px;
+}
+
+.coinflip-anim {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  height: 34px;
+  margin: -2px 0 8px;
+}
+
+.coinflip-coin {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 32%, #fff7c4, #f6cb57 60%, #ac7710 100%);
+  border: 1px solid rgba(255, 235, 167, 0.85);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  transform: translateY(6px) scaleX(0.35) rotate(90deg);
+}
+
+.coinflip-coin.flipping {
+  animation: coinflip-jump 0.62s ease-in-out;
+}
+
+@keyframes coinflip-jump {
+  0% {
+    transform: translateY(6px) scaleX(0.35) rotate(90deg);
+  }
+  22% {
+    transform: translateY(-8px) scaleX(1) rotate(390deg);
+  }
+  55% {
+    transform: translateY(-16px) scaleX(1) rotate(760deg);
+  }
+  100% {
+    transform: translateY(6px) scaleX(0.35) rotate(1170deg);
+  }
 }
 
 .gambling-result {

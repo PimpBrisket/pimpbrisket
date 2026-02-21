@@ -36,6 +36,7 @@ const upgradesListEl = document.getElementById("upgrades-list");
 const shopPanel = document.getElementById("shop-panel");
 const closeShopButton = document.getElementById("close-shop-button");
 const shopShowcaseCardEl = document.getElementById("shop-showcase-card");
+const shopEmptyCardEl = document.getElementById("shop-empty-card");
 const shopEmptyMessageEl = document.getElementById("shop-empty-message");
 const shopStatusEl = document.getElementById("shop-status");
 const shopBuyShowcaseButton = document.getElementById("shop-buy-showcase-button");
@@ -67,7 +68,7 @@ const devResetConfigButton = document.getElementById("dev-reset-config-button");
 const devLootControls = document.getElementById("dev-loot-controls");
 const devMoneyInput = document.getElementById("dev-money-input");
 const devSetMoneyButton = document.getElementById("dev-set-money-button");
-const devResetMoneyButton = document.getElementById("dev-reset-money-button");
+const devResetProgressButton = document.getElementById("dev-reset-progress-button");
 const devFreezeMoneyToggle = document.getElementById("dev-freeze-money-toggle");
 const devActionTools = document.getElementById("dev-action-tools");
 const devGamblingTools = document.getElementById("dev-gambling-tools");
@@ -114,6 +115,8 @@ const gamblingStatusEl = document.getElementById("gambling-status");
 const gamblingResultTextEl = document.getElementById("gambling-result-text");
 const slotsPayoutsEl = document.getElementById("slots-payouts");
 const coinflipControlsEl = document.getElementById("coinflip-controls");
+const coinflipAnimEl = document.getElementById("coinflip-anim");
+const coinflipCoinEl = document.getElementById("coinflip-coin");
 const blackjackControlsEl = document.getElementById("blackjack-controls");
 const slotsControlsEl = document.getElementById("slots-controls");
 const coinflipHeadsButton = document.getElementById("coinflip-heads-button");
@@ -148,18 +151,18 @@ const FALLBACK_META = {
   actions: {
     dig: {
       xpMin: 12,
-      xpMax: 20,
+      xpMax: 19,
       payoutTiers: [
-        { chancePct: 45, min: 6, max: 12, label: "Small Pouch" },
+        { chancePct: 45, min: 7, max: 12, label: "Small Pouch" },
         { chancePct: 32, min: 13, max: 20, label: "Good Find" },
-        { chancePct: 18, min: 21, max: 34, label: "Lucky Find" },
-        { chancePct: 5, min: 35, max: 52, label: "Jackpot Vein" }
+        { chancePct: 18, min: 21, max: 32, label: "Lucky Find" },
+        { chancePct: 5, min: 33, max: 50, label: "Jackpot Vein" }
       ],
       bonusTiers: [
         { chancePct: 87, coins: 0, label: "No extra drop", itemKey: null, itemImage: null },
         {
           chancePct: 11,
-          coins: 15,
+          coins: 10,
           label: "Gold Coin",
           itemKey: "gold_coin",
           itemImage: "/assets/Gold%20coin.png"
@@ -173,7 +176,7 @@ const FALLBACK_META = {
         },
         {
           chancePct: 1,
-          coins: 75,
+          coins: 120,
           label: "Collectors Greed",
           itemKey: "collectors_greed",
           itemImage: "/assets/dig-trophy.png"
@@ -181,19 +184,19 @@ const FALLBACK_META = {
       ]
     },
     fish: {
-      xpMin: 14,
-      xpMax: 22,
+      xpMin: 13,
+      xpMax: 21,
       payoutTiers: [
-        { chancePct: 42, min: 8, max: 14, label: "Common Catch" },
-        { chancePct: 34, min: 15, max: 24, label: "Fresh Catch" },
-        { chancePct: 19, min: 25, max: 38, label: "Big Catch" },
-        { chancePct: 5, min: 39, max: 58, label: "Legend Catch" }
+        { chancePct: 45, min: 7, max: 12, label: "Common Catch" },
+        { chancePct: 32, min: 13, max: 20, label: "Fresh Catch" },
+        { chancePct: 18, min: 21, max: 32, label: "Big Catch" },
+        { chancePct: 5, min: 33, max: 50, label: "Legend Catch" }
       ],
       bonusTiers: [
         { chancePct: 87, coins: 0, label: "No extra drop", itemKey: null, itemImage: null },
         {
           chancePct: 11,
-          coins: 15,
+          coins: 10,
           label: "Treasure Scale",
           itemKey: "treasure_scale",
           itemImage: "/assets/null_trophy.png"
@@ -207,7 +210,7 @@ const FALLBACK_META = {
         },
         {
           chancePct: 1,
-          coins: 75,
+          coins: 120,
           label: "Midnight Ocean",
           itemKey: "midnight_ocean",
           itemImage: "/assets/fish-trophy.png"
@@ -215,19 +218,19 @@ const FALLBACK_META = {
       ]
     },
     hunt: {
-      xpMin: 16,
-      xpMax: 25,
+      xpMin: 14,
+      xpMax: 23,
       payoutTiers: [
-        { chancePct: 40, min: 10, max: 18, label: "Small Trophy" },
-        { chancePct: 35, min: 19, max: 30, label: "Strong Trophy" },
-        { chancePct: 20, min: 31, max: 46, label: "Prime Trophy" },
-        { chancePct: 5, min: 47, max: 68, label: "Elite Trophy" }
+        { chancePct: 45, min: 7, max: 12, label: "Small Trophy" },
+        { chancePct: 32, min: 13, max: 20, label: "Strong Trophy" },
+        { chancePct: 18, min: 21, max: 32, label: "Prime Trophy" },
+        { chancePct: 5, min: 33, max: 50, label: "Elite Trophy" }
       ],
       bonusTiers: [
         { chancePct: 87, coins: 0, label: "No extra drop", itemKey: null, itemImage: null },
         {
           chancePct: 11,
-          coins: 15,
+          coins: 10,
           label: "Pelt Bonus",
           itemKey: "pelt_bonus",
           itemImage: "/assets/null_trophy.png"
@@ -241,7 +244,7 @@ const FALLBACK_META = {
         },
         {
           chancePct: 1,
-          coins: 75,
+          coins: 120,
           label: "Many Heads",
           itemKey: "many_heads",
           itemImage: "/assets/hunt-trophy.png"
@@ -271,6 +274,8 @@ let selectedGambleGame = "";
 let sessionWalletDelta = 0;
 let showcaseDraftSelections = [];
 let showcaseDraftDirty = false;
+let coinflipInProgress = false;
+let slotsSpinInProgress = false;
 let blackjackState = {
   active: false,
   player: [],
@@ -584,31 +589,35 @@ function renderInventoryPanel() {
 function renderShopPanel() {
   if (!shopStatusEl || !shopBuyShowcaseButton) return;
   const showcase = currentProfile?.showcase || {};
-  const slots = Number(showcase.slots || 0);
+  const rawSlots = Number(showcase.slots || 0);
   const maxSlots = Number(showcase.maxSlots || 0);
   const nextCost = Number(showcase.nextSlotCost || 0);
-  const isSoldOut = slots >= maxSlots && maxSlots > 0;
+  const slots = rawSlots > 0 ? Math.min(maxSlots, rawSlots + 1) : 0;
+  const isSoldOut = rawSlots >= maxSlots && maxSlots > 0;
   if (shopShowcaseCardEl) {
     shopShowcaseCardEl.hidden = isSoldOut;
+  }
+  if (shopEmptyCardEl) {
+    shopEmptyCardEl.hidden = !isSoldOut;
   }
   if (shopEmptyMessageEl) {
     shopEmptyMessageEl.hidden = !isSoldOut;
   }
 
-  if (slots <= 0) {
-    shopStatusEl.textContent = "Buy Showcase to unlock 1 showcase slot.";
+  if (rawSlots <= 0) {
+    shopStatusEl.textContent = `${slots}/${maxSlots}`;
     shopBuyShowcaseButton.textContent = "Buy Showcase ($1,000)";
     shopBuyShowcaseButton.disabled = false;
     return;
   }
-  if (slots >= maxSlots) {
-    shopStatusEl.textContent = "";
-    shopBuyShowcaseButton.textContent = "";
+  if (rawSlots >= maxSlots) {
+    shopStatusEl.textContent = `${maxSlots}/${maxSlots}`;
+    shopBuyShowcaseButton.textContent = "Maxed";
     shopBuyShowcaseButton.disabled = true;
     return;
   }
-  shopStatusEl.textContent = `Current slots: ${slots}/${maxSlots}`;
-  shopBuyShowcaseButton.textContent = `Buy Showcase Slot ${slots + 1} ($${formatCoins(nextCost)})`;
+  shopStatusEl.textContent = `${slots}/${maxSlots}`;
+  shopBuyShowcaseButton.textContent = `Buy Slot ${Math.min(maxSlots, slots + 1)}/${maxSlots} ($${formatCoins(nextCost)})`;
   shopBuyShowcaseButton.disabled = false;
 }
 
@@ -696,6 +705,20 @@ async function setDevMoneyValue(value) {
   });
   applyPlayerSnapshot(payload.player);
   if (devMoneyInput) devMoneyInput.value = String(Math.floor(Number(payload.player.money || 0)));
+}
+
+async function resetDevProgress() {
+  const payload = await fetchApi(`/dev/${discordUserId}/progress-reset`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" }
+  });
+  applyPlayerSnapshot(payload.player);
+  showcaseDraftDirty = false;
+  syncShowcaseDraftFromProfile();
+  renderInventoryPanel();
+  renderShowcasePanel();
+  renderShopPanel();
+  renderChanceTable(selectedChanceAction);
 }
 
 async function setDevFreezeMoney(enabled) {
@@ -1799,6 +1822,7 @@ async function performAction(action) {
 
 function hideAllGambleControls() {
   setNodeVisible(coinflipControlsEl, false);
+  setNodeVisible(coinflipAnimEl, false);
   setNodeVisible(blackjackControlsEl, false);
   setNodeVisible(slotsControlsEl, false);
   setNodeVisible(slotsPayoutsEl, false);
@@ -1815,8 +1839,10 @@ function resetBlackjackState() {
   };
   if (blackjackHitButton) blackjackHitButton.hidden = true;
   if (blackjackStandButton) blackjackStandButton.hidden = true;
+  if (blackjackDealButton) blackjackDealButton.hidden = false;
   if (blackjackHitButton) blackjackHitButton.style.display = "none";
   if (blackjackStandButton) blackjackStandButton.style.display = "none";
+  if (blackjackDealButton) blackjackDealButton.style.display = "";
 }
 
 function updateChancePanelForMode() {
@@ -1853,6 +1879,11 @@ function setMode(mode) {
     if (gamblingResultTextEl) gamblingResultTextEl.textContent = "No bet placed yet.";
     if (gamblingStatusEl) gamblingStatusEl.textContent = "Choose Coinflip, Blackjack, or Slots.";
     selectedGambleGame = "";
+    coinflipInProgress = false;
+    slotsSpinInProgress = false;
+    if (coinflipHeadsButton) coinflipHeadsButton.disabled = false;
+    if (coinflipTailsButton) coinflipTailsButton.disabled = false;
+    if (slotsSpinButton) slotsSpinButton.disabled = false;
     resetBlackjackState();
   }
   updateChancePanelForMode();
@@ -1871,6 +1902,7 @@ function setActiveGambleGame(game) {
   if (gamblingResultTextEl) gamblingResultTextEl.textContent = "No bet placed yet.";
   if (game === "coinflip" && coinflipControlsEl) {
     setNodeVisible(coinflipControlsEl, true, "flex");
+    setNodeVisible(coinflipAnimEl, true, "flex");
     if (gamblingStatusEl) gamblingStatusEl.textContent = "Coinflip active. Choose Heads or Tails.";
   } else if (game === "blackjack" && blackjackControlsEl) {
     setNodeVisible(blackjackControlsEl, true, "flex");
@@ -1890,6 +1922,15 @@ function getRuntimeRiskAndReward() {
     ? getEffectiveRewardMultiplierForGame()
     : getRiskRewardMultiplier(risk);
   return { risk, rewardMultiplier };
+}
+
+async function playCoinflipAnimation() {
+  if (!coinflipCoinEl) return;
+  coinflipCoinEl.classList.remove("flipping");
+  void coinflipCoinEl.offsetWidth;
+  coinflipCoinEl.classList.add("flipping");
+  await sleep(620);
+  coinflipCoinEl.classList.remove("flipping");
 }
 
 function drawCard() {
@@ -1920,32 +1961,44 @@ function handValue(hand) {
 }
 
 async function resolveCoinflip(call) {
+  if (coinflipInProgress) return;
   const bet = readBetOrSetError();
   if (!bet) return;
+  coinflipInProgress = true;
+  if (coinflipHeadsButton) coinflipHeadsButton.disabled = true;
+  if (coinflipTailsButton) coinflipTailsButton.disabled = true;
 
-  const { risk, rewardMultiplier } = getRuntimeRiskAndReward();
-  const winChance = Math.max(0.2, 0.5 - risk * 0.0015);
-  const opposite = call === "heads" ? "tails" : "heads";
-  const coin = Math.random() < winChance ? call : opposite;
-  const didWin = coin === call;
+  try {
+    const { risk, rewardMultiplier } = getRuntimeRiskAndReward();
+    const winChance = Math.max(0.2, 0.5 - risk * 0.0015);
+    const opposite = call === "heads" ? "tails" : "heads";
+    const coin = Math.random() < winChance ? call : opposite;
+    const didWin = coin === call;
+    await playCoinflipAnimation();
 
-  if (didWin) {
-    const profit = Math.floor(bet * 0.95 * rewardMultiplier);
-    await settleGamblingRound("coinflip", profit, true);
-    if (gamblingResultTextEl) {
-      gamblingResultTextEl.textContent = `Coin landed ${coin}. You won $${formatCoins(profit)}.`;
+    if (didWin) {
+      const profit = Math.floor(bet * 0.95 * rewardMultiplier);
+      await settleGamblingRound("coinflip", profit, true);
+      if (gamblingResultTextEl) {
+        gamblingResultTextEl.textContent = `Coin landed ${coin}. You won $${formatCoins(profit)}.`;
+      }
+      setStatus(`Coinflip win: +$${formatCoins(profit)}.`, "tone-success");
+    } else {
+      await settleGamblingRound("coinflip", -bet, false);
+      if (gamblingResultTextEl) {
+        gamblingResultTextEl.textContent = `Coin landed ${coin}. You lost $${formatCoins(bet)}.`;
+      }
+      setStatus(`Coinflip loss: -$${formatCoins(bet)}.`, "tone-error");
     }
-    setStatus(`Coinflip win: +$${formatCoins(profit)}.`, "tone-success");
-  } else {
-    await settleGamblingRound("coinflip", -bet, false);
-    if (gamblingResultTextEl) {
-      gamblingResultTextEl.textContent = `Coin landed ${coin}. You lost $${formatCoins(bet)}.`;
-    }
-    setStatus(`Coinflip loss: -$${formatCoins(bet)}.`, "tone-error");
+  } finally {
+    coinflipInProgress = false;
+    if (coinflipHeadsButton) coinflipHeadsButton.disabled = false;
+    if (coinflipTailsButton) coinflipTailsButton.disabled = false;
   }
 }
 
 function startBlackjackHand() {
+  if (blackjackState.active) return;
   const bet = readBetOrSetError();
   if (!bet) return;
   const { risk, rewardMultiplier } = getRuntimeRiskAndReward();
@@ -1964,6 +2017,10 @@ function startBlackjackHand() {
   if (blackjackStandButton) {
     blackjackStandButton.hidden = false;
     blackjackStandButton.style.display = "";
+  }
+  if (blackjackDealButton) {
+    blackjackDealButton.hidden = true;
+    blackjackDealButton.style.display = "none";
   }
   const playerTotal = handValue(blackjackState.player);
   if (gamblingResultTextEl) {
@@ -2047,35 +2104,53 @@ function blackjackHit() {
   }
 }
 
-function spinSlots() {
+async function spinSlots() {
+  if (slotsSpinInProgress) return;
   const bet = readBetOrSetError();
   if (!bet) return;
+  slotsSpinInProgress = true;
+  if (slotsSpinButton) slotsSpinButton.disabled = true;
 
-  const { rewardMultiplier } = getRuntimeRiskAndReward();
-  const roll = () => SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)];
-  const reels = [roll(), roll(), roll()];
+  try {
+    const { rewardMultiplier } = getRuntimeRiskAndReward();
+    const roll = () => SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)];
+    if (gamblingStatusEl) gamblingStatusEl.textContent = "Spinning...";
 
-  const combo = SLOT_COMBO_PAYOUTS.find((entry) => entry.matches(reels));
-  let netDelta = -bet;
-  if (combo) {
-    netDelta = Math.floor(bet * combo.baseMultiplier * rewardMultiplier);
-  }
-
-  settleGamblingRound("slots", netDelta, !!combo).catch((err) => {
-    setStatus(err.message || "Could not settle slots result.", "tone-error");
-  });
-  if (gamblingResultTextEl) {
-    const reelText = reels.join(" | ");
-    if (combo && netDelta >= 0) {
-      gamblingResultTextEl.textContent = `${reelText} -> ${combo.label} hit! You won $${formatCoins(netDelta)}.`;
-    } else {
-      gamblingResultTextEl.textContent = `${reelText} -> You lost $${formatCoins(Math.abs(netDelta))}.`;
+    for (let i = 0; i < 10; i += 1) {
+      const preview = [roll(), roll(), roll()];
+      if (gamblingResultTextEl) gamblingResultTextEl.textContent = `${preview.join(" | ")} ...`;
+      await sleep(95);
     }
-  }
-  if (netDelta >= 0) {
-    setStatus(`Slots win: +$${formatCoins(netDelta)}.`, "tone-success");
-  } else {
-    setStatus(`Slots loss: -$${formatCoins(Math.abs(netDelta))}.`, "tone-error");
+
+    const reels = [roll(), roll(), roll()];
+    const combo = SLOT_COMBO_PAYOUTS.find((entry) => entry.matches(reels));
+    let netDelta = -bet;
+    if (combo) {
+      netDelta = Math.floor(bet * combo.baseMultiplier * rewardMultiplier);
+    }
+
+    await settleGamblingRound("slots", netDelta, !!combo);
+    if (gamblingResultTextEl) {
+      const reelText = reels.join(" | ");
+      if (combo && netDelta >= 0) {
+        gamblingResultTextEl.textContent = `${reelText} -> ${combo.label} hit! You won $${formatCoins(netDelta)}.`;
+      } else {
+        gamblingResultTextEl.textContent = `${reelText} -> You lost $${formatCoins(Math.abs(netDelta))}.`;
+      }
+    }
+    if (netDelta >= 0) {
+      setStatus(`Slots win: +$${formatCoins(netDelta)}.`, "tone-success");
+    } else {
+      setStatus(`Slots loss: -$${formatCoins(Math.abs(netDelta))}.`, "tone-error");
+    }
+  } catch (err) {
+    setStatus(err.message || "Could not settle slots result.", "tone-error");
+  } finally {
+    slotsSpinInProgress = false;
+    if (slotsSpinButton) slotsSpinButton.disabled = false;
+    if (gamblingStatusEl && selectedGambleGame === "slots") {
+      gamblingStatusEl.textContent = "Slots active. Press Spin.";
+    }
   }
 }
 
@@ -2545,14 +2620,17 @@ function bindUserMenu() {
         }
       });
     }
-    if (devResetMoneyButton) {
-      devResetMoneyButton.addEventListener("click", async () => {
+    if (devResetProgressButton) {
+      devResetProgressButton.addEventListener("click", async () => {
         try {
-          await setDevMoneyValue(0);
+          await resetDevProgress();
           if (devMoneyInput) devMoneyInput.value = "0";
-          setStatus("Money reset to $0.", "tone-success");
+          if (devLevelInput) devLevelInput.value = "1";
+          if (devUpgradeLevelInput) devUpgradeLevelInput.value = "0";
+          if (devFreezeMoneyToggle) devFreezeMoneyToggle.checked = false;
+          setStatus("All progress reset to baseline.", "tone-success");
         } catch (err) {
-          setStatus(err.message || "Could not reset money.", "tone-error");
+          setStatus(err.message || "Could not reset progress.", "tone-error");
         }
       });
     }
