@@ -33,7 +33,8 @@ const {
   claimDailyChallengeReward,
   getAchievementSummary,
   settleGamblingResult,
-  purchaseUpgrade
+  purchaseUpgrade,
+  purchaseUpgradeMax
 } = require("./database");
 
 function parsePositiveIntEnv(name, fallback) {
@@ -880,6 +881,43 @@ app.post("/players/:discordUserId/upgrades/:action/:upgradeKey", async (req, res
     return res.json({
       ok: true,
       cost: result.cost,
+      purchasedLevels: result.purchasedLevels || 1,
+      achievementCoins: result.achievementCoins || 0,
+      upgrades: result.upgrades,
+      player: toPublicPlayer(result.player)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/players/:discordUserId/upgrades/:action/:upgradeKey/max", async (req, res) => {
+  try {
+    const discordUserId = req.params.discordUserId;
+    const action = req.params.action;
+    const upgradeKey = req.params.upgradeKey;
+    if (!isValidDiscordUserId(discordUserId)) {
+      return res.status(400).json({
+        error: "discordUserId must be a Discord snowflake string (17-20 digits)"
+      });
+    }
+
+    const result = await purchaseUpgradeMax(db, discordUserId, action, upgradeKey);
+    if (!result.ok) {
+      return res.status(409).json({
+        error: result.error || "Could not buy max upgrades",
+        cost: result.cost,
+        purchasedLevels: result.purchasedLevels || 0,
+        player: toPublicPlayer(result.player),
+        upgrades: buildUpgradeSummary(result.player)
+      });
+    }
+
+    return res.json({
+      ok: true,
+      cost: result.cost,
+      purchasedLevels: result.purchasedLevels,
+      achievementCoins: result.achievementCoins || 0,
       upgrades: result.upgrades,
       player: toPublicPlayer(result.player)
     });

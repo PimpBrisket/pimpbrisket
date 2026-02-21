@@ -2,6 +2,7 @@ const { Pool } = require("pg");
 
 const ACTION_COOLDOWN_MS = 5000;
 const MAX_LEVEL = 100;
+const MAX_UPGRADE_LEVEL = 1000;
 const MAX_BET_COINS = 1_000_000;
 const DAILY_BASE_REWARD = 250;
 const DAILY_CHALLENGE_BASE_REWARD = 700;
@@ -48,22 +49,50 @@ const ACHIEVEMENT_CHAINS = [
     key: "collectorsGreed",
     label: "Collector's Greed",
     thresholds: [1, 5, 10, 15, 20, 50, 100],
-    rewards: [300, 1200, 2600, 4200, 6000, 18000, 50000],
+    rewards: [450, 1800, 3900, 6300, 9000, 27000, 75000],
     progressValue: (player) => Number(player.digTrophyCount || 0)
   },
   {
     key: "midnightOcean",
     label: "Midnight Ocean",
     thresholds: [1, 5, 10, 15, 20, 50, 100],
-    rewards: [300, 1200, 2600, 4200, 6000, 18000, 50000],
+    rewards: [450, 1800, 3900, 6300, 9000, 27000, 75000],
     progressValue: (player) => Number(player.fishTrophyCount || 0)
   },
   {
     key: "manyHeads",
     label: "Many Heads",
     thresholds: [1, 5, 10, 15, 20, 50, 100],
-    rewards: [300, 1200, 2600, 4200, 6000, 18000, 50000],
+    rewards: [450, 1800, 3900, 6300, 9000, 27000, 75000],
     progressValue: (player) => Number(player.huntTrophyCount || 0)
+  },
+  {
+    key: "digUpgrades",
+    label: "Buy Upgrades for Dig",
+    thresholds: [1, 10, 20, 50, 75, 100, 150, 200, 300, 500, 750, 1000],
+    rewards: [80, 160, 320, 650, 1000, 1400, 2100, 3000, 4500, 8000, 13000, 22000],
+    progressValue: (player) => Number(player.totalDigUpgradesPurchased || 0)
+  },
+  {
+    key: "fishUpgrades",
+    label: "Buy Upgrades for Fish",
+    thresholds: [1, 10, 20, 50, 75, 100, 150, 200, 300, 500, 750, 1000],
+    rewards: [80, 160, 320, 650, 1000, 1400, 2100, 3000, 4500, 8000, 13000, 22000],
+    progressValue: (player) => Number(player.totalFishUpgradesPurchased || 0)
+  },
+  {
+    key: "huntUpgrades",
+    label: "Buy Upgrades for Hunt",
+    thresholds: [1, 10, 20, 50, 75, 100, 150, 200, 300, 500, 750, 1000],
+    rewards: [80, 160, 320, 650, 1000, 1400, 2100, 3000, 4500, 8000, 13000, 22000],
+    progressValue: (player) => Number(player.totalHuntUpgradesPurchased || 0)
+  },
+  {
+    key: "unlockGambling",
+    label: "Unlock Gambling",
+    thresholds: [1],
+    rewards: [600],
+    progressValue: (player) => (Number(player.level || 1) >= 5 ? 1 : 0)
   },
   {
     key: "completeAchievements",
@@ -98,7 +127,7 @@ const ACTIONS = {
       { chancePct: 2, coins: 20, label: "Da Bone" },
       {
         chancePct: 1,
-        coins: 0,
+        coins: 45,
         label: "Collectors Greed",
         itemKey: "dig_trophy",
         itemImage: "/assets/dig-trophy.png"
@@ -121,7 +150,7 @@ const ACTIONS = {
       { chancePct: 3, coins: 24, label: "Ancient Chest Key" },
       {
         chancePct: 1,
-        coins: 0,
+        coins: 45,
         label: "Midnight Ocean",
         itemKey: "fish_trophy",
         itemImage: "/assets/fish-trophy.png"
@@ -144,7 +173,7 @@ const ACTIONS = {
       { chancePct: 3, coins: 30, label: "Rare Antler Set" },
       {
         chancePct: 1,
-        coins: 0,
+        coins: 45,
         label: "Many Heads",
         itemKey: "hunt_trophy",
         itemImage: "/assets/hunt-trophy.png"
@@ -182,6 +211,9 @@ const PLAYER_SELECT_SQL = `SELECT
   "totalBonusRewards",
   "totalGamblingWins",
   "totalGamblingPlays",
+  "totalDigUpgradesPurchased",
+  "totalFishUpgradesPurchased",
+  "totalHuntUpgradesPurchased",
   "achievementState",
   upgrades
  FROM players
@@ -245,7 +277,10 @@ function sanitizeUpgrades(input) {
     const sourceAction = input[actionKey];
     if (!sourceAction || typeof sourceAction !== "object") continue;
     for (const upgradeKey of UPGRADE_KEYS) {
-      const parsed = Math.max(0, Math.floor(Number(sourceAction[upgradeKey]) || 0));
+      const parsed = Math.max(
+        0,
+        Math.min(MAX_UPGRADE_LEVEL, Math.floor(Number(sourceAction[upgradeKey]) || 0))
+      );
       next[actionKey][upgradeKey] = parsed;
     }
   }
@@ -344,6 +379,9 @@ async function initDatabase(db) {
     "totalBonusRewards" INTEGER NOT NULL DEFAULT 0,
     "totalGamblingWins" INTEGER NOT NULL DEFAULT 0,
     "totalGamblingPlays" INTEGER NOT NULL DEFAULT 0,
+    "totalDigUpgradesPurchased" INTEGER NOT NULL DEFAULT 0,
+    "totalFishUpgradesPurchased" INTEGER NOT NULL DEFAULT 0,
+    "totalHuntUpgradesPurchased" INTEGER NOT NULL DEFAULT 0,
     "achievementState" JSONB,
     upgrades JSONB
   )`);
@@ -373,6 +411,9 @@ async function initDatabase(db) {
     `"totalBonusRewards" INTEGER NOT NULL DEFAULT 0`,
     `"totalGamblingWins" INTEGER NOT NULL DEFAULT 0`,
     `"totalGamblingPlays" INTEGER NOT NULL DEFAULT 0`,
+    `"totalDigUpgradesPurchased" INTEGER NOT NULL DEFAULT 0`,
+    `"totalFishUpgradesPurchased" INTEGER NOT NULL DEFAULT 0`,
+    `"totalHuntUpgradesPurchased" INTEGER NOT NULL DEFAULT 0`,
     `"achievementState" JSONB`,
     `upgrades JSONB`
   ];
@@ -603,6 +644,9 @@ async function setDevFreezeMoney(db, discordUserId, enabled) {
 }
 
 function getUpgradeCost(action, upgradeKey, currentLevel) {
+  const level = Math.max(0, Math.floor(Number(currentLevel) || 0));
+  if (level >= MAX_UPGRADE_LEVEL) return 0;
+  const MAX_INT32 = 2147483647;
   const baseByKey = {
     cash: 220,
     xp: 260,
@@ -616,8 +660,9 @@ function getUpgradeCost(action, upgradeKey, currentLevel) {
   const base = baseByKey[upgradeKey] || 500;
   const growth = growthByKey[upgradeKey] || 1.4;
   const actionBias = action === "hunt" ? 1.08 : action === "fish" ? 1.03 : 1;
-  const level = Math.max(0, Math.floor(Number(currentLevel) || 0));
-  return Math.max(1, Math.floor(base * Math.pow(growth, level) * actionBias));
+  const raw = base * Math.pow(growth, level) * actionBias;
+  if (!Number.isFinite(raw) || raw > MAX_INT32) return MAX_INT32;
+  return Math.max(1, Math.floor(raw));
 }
 
 function getUpgradeEffects(upgrades, action) {
@@ -658,9 +703,12 @@ function buildUpgradeSummary(player) {
     summary[actionKey] = {};
     for (const upgradeKey of UPGRADE_KEYS) {
       const currentLevel = upgrades[actionKey][upgradeKey];
+      const atMax = currentLevel >= MAX_UPGRADE_LEVEL;
       summary[actionKey][upgradeKey] = {
         level: currentLevel,
-        nextCost: getUpgradeCost(actionKey, upgradeKey, currentLevel)
+        maxLevel: MAX_UPGRADE_LEVEL,
+        atMax,
+        nextCost: atMax ? 0 : getUpgradeCost(actionKey, upgradeKey, currentLevel)
       };
     }
     summary[actionKey].effects = getUpgradeEffects(upgrades, actionKey);
@@ -1271,6 +1319,14 @@ async function settleGamblingResult(
 
     await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
     const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    if (Number(playerBefore.level || 1) < 5) {
+      await client.query("COMMIT");
+      return {
+        ok: false,
+        error: "Gambling unlocks at level 5",
+        player: playerBefore
+      };
+    }
     const freezeMoney = isMoneyFrozen(playerBefore);
     const appliedCoinDelta = freezeMoney ? 0 : coinDelta;
 
@@ -1350,7 +1406,22 @@ async function purchaseUpgrade(db, discordUserId, action, upgradeKey) {
     const freezeMoney = isMoneyFrozen(playerBefore);
     const upgrades = sanitizeUpgrades(playerBefore.upgrades || {});
     const currentLevel = upgrades[action][upgradeKey];
+    if (currentLevel >= MAX_UPGRADE_LEVEL) {
+      await client.query("COMMIT");
+      return {
+        ok: false,
+        error: "Upgrade is already at max level",
+        cost: 0,
+        player: playerBefore
+      };
+    }
     const cost = getUpgradeCost(action, upgradeKey, currentLevel);
+    const purchaseColumnByAction = {
+      dig: "totalDigUpgradesPurchased",
+      fish: "totalFishUpgradesPurchased",
+      hunt: "totalHuntUpgradesPurchased"
+    };
+    const purchaseColumn = purchaseColumnByAction[action];
 
     if (!freezeMoney && Number(playerBefore.money || 0) < cost) {
       await client.query("COMMIT");
@@ -1367,16 +1438,117 @@ async function purchaseUpgrade(db, discordUserId, action, upgradeKey) {
       `UPDATE players
        SET money = money - $1,
            upgrades = $2::jsonb,
+           "${purchaseColumn}" = "${purchaseColumn}" + 1,
            "updatedAt" = NOW()
        WHERE "discordUserId" = $3`,
       [freezeMoney ? 0 : cost, JSON.stringify(upgrades), discordUserId]
     );
 
-    const playerAfter = await getPlayerByDiscordId(client, discordUserId, client);
+    const playerAfterRaw = await getPlayerByDiscordId(client, discordUserId, client);
+    const achievementGrant = await grantPendingAchievements(client, playerAfterRaw);
+    const playerAfter = achievementGrant.player;
     await client.query("COMMIT");
     return {
       ok: true,
       cost,
+      purchasedLevels: 1,
+      achievementCoins: achievementGrant.grantedCoins,
+      player: playerAfter,
+      upgrades: buildUpgradeSummary(playerAfter)
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function purchaseUpgradeMax(db, discordUserId, action, upgradeKey) {
+  if (!ACTIONS[action]) throw new Error("Unsupported action");
+  if (!UPGRADE_KEYS.includes(upgradeKey)) throw new Error("Unsupported upgrade type");
+
+  const purchaseColumnByAction = {
+    dig: "totalDigUpgradesPurchased",
+    fish: "totalFishUpgradesPurchased",
+    hunt: "totalHuntUpgradesPurchased"
+  };
+  const purchaseColumn = purchaseColumnByAction[action];
+
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO players ("discordUserId", money, upgrades, "achievementState")
+       VALUES ($1, 0, $2::jsonb, $3::jsonb)
+       ON CONFLICT ("discordUserId") DO NOTHING`,
+      [discordUserId, JSON.stringify(DEFAULT_UPGRADES), JSON.stringify({})]
+    );
+
+    await client.query(`${PLAYER_SELECT_SQL} FOR UPDATE`, [discordUserId]);
+    const playerBefore = await getPlayerByDiscordId(client, discordUserId, client);
+    const freezeMoney = isMoneyFrozen(playerBefore);
+    const upgrades = sanitizeUpgrades(playerBefore.upgrades || {});
+    const currentLevel = upgrades[action][upgradeKey];
+
+    if (currentLevel >= MAX_UPGRADE_LEVEL) {
+      await client.query("COMMIT");
+      return {
+        ok: false,
+        error: "Upgrade is already at max level",
+        cost: 0,
+        purchasedLevels: 0,
+        player: playerBefore
+      };
+    }
+
+    let nextLevel = currentLevel;
+    let totalCost = 0;
+    if (freezeMoney) {
+      nextLevel = MAX_UPGRADE_LEVEL;
+    } else {
+      let remainingMoney = Math.max(0, Number(playerBefore.money || 0));
+      while (nextLevel < MAX_UPGRADE_LEVEL) {
+        const cost = getUpgradeCost(action, upgradeKey, nextLevel);
+        if (cost <= 0 || remainingMoney < cost) break;
+        remainingMoney -= cost;
+        totalCost += cost;
+        nextLevel += 1;
+      }
+    }
+
+    const purchasedLevels = Math.max(0, nextLevel - currentLevel);
+    if (purchasedLevels <= 0) {
+      await client.query("COMMIT");
+      return {
+        ok: false,
+        error: "Not enough coins",
+        cost: getUpgradeCost(action, upgradeKey, currentLevel),
+        purchasedLevels: 0,
+        player: playerBefore
+      };
+    }
+
+    upgrades[action][upgradeKey] = nextLevel;
+    await client.query(
+      `UPDATE players
+       SET money = money - $1,
+           upgrades = $2::jsonb,
+           "${purchaseColumn}" = "${purchaseColumn}" + $3,
+           "updatedAt" = NOW()
+       WHERE "discordUserId" = $4`,
+      [freezeMoney ? 0 : totalCost, JSON.stringify(upgrades), purchasedLevels, discordUserId]
+    );
+
+    const playerAfterRaw = await getPlayerByDiscordId(client, discordUserId, client);
+    const achievementGrant = await grantPendingAchievements(client, playerAfterRaw);
+    const playerAfter = achievementGrant.player;
+    await client.query("COMMIT");
+    return {
+      ok: true,
+      cost: freezeMoney ? 0 : totalCost,
+      purchasedLevels,
+      achievementCoins: achievementGrant.grantedCoins,
       player: playerAfter,
       upgrades: buildUpgradeSummary(playerAfter)
     };
@@ -1417,6 +1589,7 @@ module.exports = {
   getAchievementSummary,
   settleGamblingResult,
   purchaseUpgrade,
+  purchaseUpgradeMax,
   xpRequiredForLevel,
   levelRewardCoins
 };
